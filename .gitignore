@@ -32,3 +32,8 @@ target
 .DS_Store
 
 logs
+
+# Exclude for now
+/test_videos/
+/uploads/
+/thumbnails/

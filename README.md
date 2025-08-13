@@ -14,6 +14,7 @@ A high-performance asynchronous media catalog engine written in Rust that scans,
 - **🖼️ Thumbnail Generation**: Automatic thumbnail creation for images and videos
 - **🔄 Duplicate Detection**: Find and manage duplicate files based on content hash
 - **👤 Face Recognition**: Detect faces in images and group similar faces together
+- **🎨 Web UI**: Beautiful web interface for browsing, searching, and uploading media
 - **💾 SQLite Storage**: Lightweight embedded database with full-text search
 - **🌐 RESTful API**: Complete web API with CORS support
 - **📊 Prometheus Metrics**: Built-in monitoring and performance tracking
@@ -75,6 +76,37 @@ ENABLE_FACE_DETECTION=true
 RUST_LOG=medianator=debug,tower_http=info
 ```
 
+## Web Interface
+
+The Medianator web UI provides an intuitive interface for managing your media catalog:
+
+### Access the Web UI
+
+After starting the server, open your browser and navigate to:
+```
+http://localhost:3000
+```
+
+### Features
+
+- **📊 Statistics Dashboard**: Real-time stats about your media library
+- **📤 Upload Files**: Drag-and-drop file upload with progress tracking
+- **🔍 Search**: Full-text search across filenames and paths
+- **🖼️ Gallery View**: Grid or list view with thumbnails
+- **📁 Directory Scanning**: Scan new directories from the web interface
+- **🔄 Duplicate Detection**: Find and view duplicate files
+- **👤 Face Groups**: View detected faces and face groups
+- **🔍 Media Details**: Click any media item to view full metadata
+
+### Usage
+
+1. **Upload Files**: Drag files onto the upload area or click to browse
+2. **Search Media**: Use the search bar to find files by name or path
+3. **Filter by Type**: Use the dropdown to filter by images, videos, or audio
+4. **Scan Directories**: Click "Scan Directory" and enter a path to scan
+5. **Find Duplicates**: Click "Find Duplicates" to view duplicate file groups
+6. **View Details**: Click any media item to see full metadata and EXIF data
+
 ## API Reference
 
 ### Core Endpoints
@@ -125,6 +157,15 @@ Content-Type: application/json
 }
 ```
 Initiates an asynchronous directory scan.
+
+#### Upload File
+```http
+POST /api/upload
+Content-Type: multipart/form-data
+
+file: <binary data>
+```
+Upload media files directly through the API.
 
 #### Statistics
 ```http

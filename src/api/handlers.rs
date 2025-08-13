@@ -1,7 +1,7 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -341,5 +341,65 @@ pub async fn add_face_to_group(
             tracing::error!("Failed to add face to group: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
+    }
+}
+
+pub async fn upload_file(
+    State(state): State<Arc<AppState>>,
+    mut multipart: Multipart,
+) -> Result<Json<ApiResponse<String>>, StatusCode> {
+    while let Some(field) = multipart.next_field().await.unwrap_or(None) {
+        let name = field.name().unwrap_or("").to_string();
+        let file_name = field.file_name().unwrap_or("").to_string();
+        
+        if name == "file" && !file_name.is_empty() {
+            // Create upload directory if it doesn't exist
+            let upload_dir = std::path::Path::new("uploads");
+            if !upload_dir.exists() {
+                if let Err(e) = fs::create_dir_all(upload_dir).await {
+                    tracing::error!("Failed to create upload directory: {}", e);
+                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                }
+            }
+            
+            // Generate unique filename
+            let unique_name = format!("{}_{}", uuid::Uuid::new_v4(), file_name);
+            let file_path = upload_dir.join(&unique_name);
+            
+            // Get file data
+            let data = match field.bytes().await {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    tracing::error!("Failed to read file data: {}", e);
+                    return Err(StatusCode::BAD_REQUEST);
+                }
+            };
+            
+            // Save file
+            if let Err(e) = fs::write(&file_path, &data).await {
+                tracing::error!("Failed to save file: {}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+            
+            // Scan the uploaded file
+            let scanner = state.scanner.clone();
+            let path = file_path.clone();
+            tokio::spawn(async move {
+                if let Err(e) = scanner.scan_directory(&path.parent().unwrap()).await {
+                    tracing::error!("Failed to scan uploaded file: {}", e);
+                }
+            });
+            
+            return Ok(Json(ApiResponse::success(format!("File uploaded: {}", unique_name))));
+        }
+    }
+    
+    Ok(Json(ApiResponse::error("No file provided".to_string())))
+}
+
+pub async fn serve_index() -> Html<String> {
+    match fs::read_to_string("static/index.html").await {
+        Ok(html) => Html(html),
+        Err(_) => Html("<h1>Error loading page</h1>".to_string()),
     }
 }

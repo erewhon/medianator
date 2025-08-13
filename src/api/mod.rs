@@ -8,6 +8,7 @@ use axum::{
 use std::sync::Arc;
 use tower_http::{
     cors::{Any, CorsLayer},
+    services::ServeDir,
     trace::TraceLayer,
 };
 
@@ -28,6 +29,7 @@ pub fn create_app(db: Database, scanner: MediaScanner) -> Router {
         .allow_headers(Any);
 
     Router::new()
+        .route("/", get(handlers::serve_index))
         .route("/health", get(handlers::health_check))
         .route("/api/media", get(handlers::list_media))
         .route("/api/media/search", get(handlers::search_media))
@@ -38,6 +40,7 @@ pub fn create_app(db: Database, scanner: MediaScanner) -> Router {
         .route("/api/scan", post(handlers::start_scan))
         .route("/api/stats", get(handlers::get_stats))
         .route("/api/scan/history", get(handlers::get_scan_history))
+        .route("/api/upload", post(handlers::upload_file))
         .route("/api/duplicates", get(handlers::get_duplicates))
         .route("/api/duplicates/stats", get(handlers::get_duplicate_stats))
         .route("/api/duplicates/cleanup", get(handlers::suggest_duplicate_cleanup))
@@ -45,6 +48,7 @@ pub fn create_app(db: Database, scanner: MediaScanner) -> Router {
         .route("/api/faces/groups", post(handlers::create_face_group))
         .route("/api/faces/groups/add", post(handlers::add_face_to_group))
         .route("/metrics", get(metrics::metrics_handler))
+        .nest_service("/static", ServeDir::new("static"))
         .layer(MetricsMiddleware::new())
         .layer(cors)
         .layer(TraceLayer::new_for_http())

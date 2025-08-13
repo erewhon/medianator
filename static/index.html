@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medianator - Media Catalog</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📸 Medianator</h1>
+            <p>Media Catalog Engine</p>
+        </header>
+
+        <!-- Stats Dashboard -->
+        <section class="stats-section">
+            <h2>📊 Statistics</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="total-files">-</div>
+                    <div class="stat-label">Total Files</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="image-files">-</div>
+                    <div class="stat-label">Images</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="video-files">-</div>
+                    <div class="stat-label">Videos</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="audio-files">-</div>
+                    <div class="stat-label">Audio</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="total-size">-</div>
+                    <div class="stat-label">Total Size</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="duplicate-groups">-</div>
+                    <div class="stat-label">Duplicate Groups</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Upload Section -->
+        <section class="upload-section">
+            <h2>📤 Upload Files</h2>
+            <div class="upload-area" id="upload-area">
+                <input type="file" id="file-input" multiple accept="image/*,video/*,audio/*" hidden>
+                <p>📁 Drop files here or click to browse</p>
+                <p class="upload-hint">Supports images, videos, and audio files</p>
+            </div>
+            <div id="upload-progress" class="upload-progress hidden">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <p id="upload-status"></p>
+            </div>
+        </section>
+
+        <!-- Search Section -->
+        <section class="search-section">
+            <h2>🔍 Search Media</h2>
+            <div class="search-bar">
+                <input type="text" id="search-input" placeholder="Search by filename or path...">
+                <button id="search-btn">Search</button>
+                <select id="filter-type">
+                    <option value="">All Types</option>
+                    <option value="image">Images</option>
+                    <option value="video">Videos</option>
+                    <option value="audio">Audio</option>
+                </select>
+            </div>
+        </section>
+
+        <!-- Gallery Section -->
+        <section class="gallery-section">
+            <h2>🖼️ Media Gallery</h2>
+            <div class="view-controls">
+                <button class="view-btn active" data-view="grid">Grid View</button>
+                <button class="view-btn" data-view="list">List View</button>
+                <button id="scan-btn" class="action-btn">🔄 Scan Directory</button>
+                <button id="duplicates-btn" class="action-btn">🔍 Find Duplicates</button>
+            </div>
+            <div id="gallery" class="gallery grid-view">
+                <!-- Media items will be loaded here -->
+            </div>
+            <div class="pagination">
+                <button id="prev-page" disabled>Previous</button>
+                <span id="page-info">Page 1</span>
+                <button id="next-page">Next</button>
+            </div>
+        </section>
+
+        <!-- Scan Modal -->
+        <div id="scan-modal" class="modal hidden">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2>Scan Directory</h2>
+                <input type="text" id="scan-path" placeholder="Enter directory path to scan">
+                <button id="start-scan">Start Scan</button>
+                <div id="scan-results" class="scan-results hidden">
+                    <p id="scan-status"></p>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="scan-progress"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Media Detail Modal -->
+        <div id="media-modal" class="modal hidden">
+            <div class="modal-content media-detail">
+                <span class="close">&times;</span>
+                <div class="media-viewer">
+                    <img id="media-preview" src="" alt="Media preview">
+                    <video id="video-preview" controls hidden></video>
+                    <audio id="audio-preview" controls hidden></audio>
+                </div>
+                <div class="media-info">
+                    <h3 id="media-filename"></h3>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Path:</span>
+                            <span id="media-path"></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Size:</span>
+                            <span id="media-size"></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Type:</span>
+                            <span id="media-type"></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Dimensions:</span>
+                            <span id="media-dimensions"></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Hash:</span>
+                            <span id="media-hash" class="hash"></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Created:</span>
+                            <span id="media-created"></span>
+                        </div>
+                    </div>
+                    <div class="camera-info hidden" id="camera-info">
+                        <h4>📷 Camera Information</h4>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">Camera:</span>
+                                <span id="camera-make"></span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Model:</span>
+                                <span id="camera-model"></span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">ISO:</span>
+                                <span id="camera-iso"></span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Aperture:</span>
+                                <span id="camera-aperture"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="detected-faces hidden" id="detected-faces">
+                        <h4>👤 Detected Faces</h4>
+                        <div id="faces-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Duplicates Modal -->
+        <div id="duplicates-modal" class="modal hidden">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2>Duplicate Files</h2>
+                <div id="duplicate-stats"></div>
+                <div id="duplicate-groups"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
