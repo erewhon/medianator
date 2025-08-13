@@ -28,7 +28,27 @@ async fn main() -> Result<()> {
     let db = Database::new(&config.database.url).await?;
     info!("Database initialized");
 
-    let scanner = MediaScanner::new(db.clone());
+    let mut scanner = MediaScanner::new(db.clone());
+    
+    // Enable thumbnail generation if configured
+    if let Ok(thumbnails_dir) = std::env::var("THUMBNAILS_DIR") {
+        scanner = scanner.with_thumbnail_generator(std::path::PathBuf::from(thumbnails_dir));
+        info!("Thumbnail generation enabled");
+    }
+    
+    // Enable face detection if configured
+    if std::env::var("ENABLE_FACE_DETECTION").unwrap_or_default() == "true" {
+        scanner = match scanner.with_face_detection() {
+            Ok(s) => {
+                info!("Face detection enabled");
+                s
+            }
+            Err(e) => {
+                warn!("Failed to enable face detection: {}", e);
+                scanner
+            }
+        };
+    }
 
     if !config.scanner.auto_scan_paths.is_empty() {
         info!("Starting initial scan of configured paths");

@@ -3,7 +3,7 @@ use sqlx::{migrate::MigrateDatabase, Pool, Sqlite, SqlitePool};
 use std::path::Path;
 use tracing::info;
 
-use crate::models::{MediaFile, MediaMetadata, ScanHistory};
+use crate::models::{MediaFile, MediaMetadata, ScanHistory, Face, FaceGroup, Duplicate};
 
 pub struct Database {
     pool: Pool<Sqlite>,
@@ -289,5 +289,152 @@ impl Database {
             "audio_files": audio_count,
             "total_size_bytes": total_size,
         }))
+    }
+
+    pub async fn insert_face(&self, face: &Face) -> Result<()> {
+        sqlx::query!(
+            r#"
+            INSERT INTO faces (id, media_file_id, face_embedding, face_bbox, confidence, detected_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "#,
+            face.id,
+            face.media_file_id,
+            face.face_embedding,
+            face.face_bbox,
+            face.confidence,
+            face.detected_at
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_faces_for_media(&self, media_id: &str) -> Result<Vec<Face>> {
+        let faces = sqlx::query_as!(
+            Face,
+            r#"
+            SELECT * FROM faces WHERE media_file_id = ?1
+            "#,
+            media_id
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(faces)
+    }
+
+    pub async fn create_face_group(&self, group_name: Option<String>) -> Result<String> {
+        let group_id = uuid::Uuid::new_v4().to_string();
+        
+        sqlx::query!(
+            r#"
+            INSERT INTO face_groups (id, group_name)
+            VALUES (?1, ?2)
+            "#,
+            group_id,
+            group_name
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(group_id)
+    }
+
+    pub async fn add_face_to_group(&self, face_id: &str, group_id: &str, similarity_score: f32) -> Result<()> {
+        sqlx::query!(
+            r#"
+            INSERT INTO face_group_members (face_id, group_id, similarity_score)
+            VALUES (?1, ?2, ?3)
+            ON CONFLICT(face_id, group_id) DO UPDATE SET
+                similarity_score = excluded.similarity_score
+            "#,
+            face_id,
+            group_id,
+            similarity_score
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // Update face count in group
+        sqlx::query!(
+            r#"
+            UPDATE face_groups 
+            SET face_count = (SELECT COUNT(*) FROM face_group_members WHERE group_id = ?1),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?1
+            "#,
+            group_id
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_face_groups(&self) -> Result<Vec<FaceGroup>> {
+        let groups = sqlx::query_as!(
+            FaceGroup,
+            r#"
+            SELECT * FROM face_groups
+            ORDER BY face_count DESC
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(groups)
+    }
+
+    pub async fn get_duplicates_by_hash(&self, file_hash: &str) -> Result<Vec<MediaFile>> {
+        let files = sqlx::query_as!(
+            MediaFile,
+            r#"
+            SELECT * FROM media_files
+            WHERE file_hash = ?1
+            ORDER BY file_path
+            "#,
+            file_hash
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(files)
+    }
+
+    pub async fn get_all_duplicate_hashes(&self) -> Result<Vec<String>> {
+        let hashes = sqlx::query_scalar!(
+            r#"
+            SELECT file_hash 
+            FROM media_files
+            GROUP BY file_hash
+            HAVING COUNT(*) > 1
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(hashes)
+    }
+
+    pub async fn update_thumbnail_path(&self, media_id: &str, thumbnail_path: &str) -> Result<()> {
+        sqlx::query!(
+            r#"
+            UPDATE media_files
+            SET thumbnail_path = ?2,
+                thumbnail_generated_at = CURRENT_TIMESTAMP
+            WHERE id = ?1
+            "#,
+            media_id,
+            thumbnail_path
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub fn get_pool(&self) -> Pool<Sqlite> {
+        self.pool.clone()
     }
 }

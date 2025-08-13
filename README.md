@@ -11,11 +11,14 @@ A high-performance asynchronous media catalog engine written in Rust that scans,
   - Video codec information and dimensions
   - Audio codec and bitrate details
   - SHA-256 file hashing for deduplication
+- **🖼️ Thumbnail Generation**: Automatic thumbnail creation for images and videos
+- **🔄 Duplicate Detection**: Find and manage duplicate files based on content hash
+- **👤 Face Recognition**: Detect faces in images and group similar faces together
 - **💾 SQLite Storage**: Lightweight embedded database with full-text search
 - **🌐 RESTful API**: Complete web API with CORS support
 - **📊 Prometheus Metrics**: Built-in monitoring and performance tracking
 - **⚡ Real-time Scanning**: Track scan progress and history
-- **🖼️ Direct Image Serving**: Stream images directly through the API
+- **🖼️ Direct Image Serving**: Stream images and thumbnails directly through the API
 
 ## Quick Start
 
@@ -59,12 +62,16 @@ Configure via environment variables or `.env` file:
 | `AUTO_SCAN_PATHS` | Comma-separated paths to scan on startup | _(empty)_ |
 | `SCAN_INTERVAL_MINUTES` | Auto-rescan interval | _(disabled)_ |
 | `RUST_LOG` | Logging level | `medianator=info` |
+| `THUMBNAILS_DIR` | Directory for storing thumbnails | _(disabled)_ |
+| `ENABLE_FACE_DETECTION` | Enable face detection (true/false) | `false` |
 
 Example `.env`:
 ```bash
 SERVER_PORT=8080
 DATABASE_URL=sqlite:///data/media_catalog.db
 AUTO_SCAN_PATHS=/media/photos,/media/videos
+THUMBNAILS_DIR=/data/thumbnails
+ENABLE_FACE_DETECTION=true
 RUST_LOG=medianator=debug,tower_http=info
 ```
 
@@ -102,6 +109,12 @@ GET /api/media/{id}/image
 ```
 Streams the actual image file (images only).
 
+#### Retrieve Thumbnail
+```http
+GET /api/media/{id}/thumbnail
+```
+Streams the thumbnail image for a media file.
+
 #### Start Scan
 ```http
 POST /api/scan
@@ -124,6 +137,67 @@ Returns catalog statistics including file counts and total size.
 GET /api/scan/history
 ```
 Lists recent scan operations with results.
+
+### Duplicate Detection Endpoints
+
+#### Find Duplicates
+```http
+GET /api/duplicates
+```
+Returns all duplicate file groups with their file paths and metadata.
+
+#### Duplicate Statistics
+```http
+GET /api/duplicates/stats
+```
+Returns statistics about duplicate files including:
+- Number of duplicate groups
+- Total redundant files
+- Wasted storage space
+
+#### Suggest Cleanup
+```http
+GET /api/duplicates/cleanup?keep_newest=true
+```
+Suggests which duplicate files to remove, keeping either newest or oldest.
+
+### Face Recognition Endpoints
+
+#### Get Faces in Media
+```http
+GET /api/media/{id}/faces
+```
+Returns all detected faces in a specific media file.
+
+#### List Face Groups
+```http
+GET /api/faces/groups
+```
+Returns all face groups (clusters of similar faces).
+
+#### Create Face Group
+```http
+POST /api/faces/groups
+Content-Type: application/json
+
+{
+  "name": "Family Photos"
+}
+```
+Creates a new face group for organizing similar faces.
+
+#### Add Face to Group
+```http
+POST /api/faces/groups/add
+Content-Type: application/json
+
+{
+  "face_id": "face-uuid",
+  "group_id": "group-uuid",
+  "similarity_score": 0.85
+}
+```
+Adds a detected face to a face group.
 
 ### Metrics Endpoint
 
@@ -167,7 +241,37 @@ media_files
 ├── camera_info (EXIF data)
 ├── codec_info
 ├── timestamps
+├── thumbnail_path
+├── thumbnail_generated_at
 └── extra_metadata (JSON)
+
+duplicates
+├── id
+├── file_hash
+├── file_paths (JSON array)
+├── file_count
+├── total_size
+└── timestamps
+
+faces
+├── id (UUID)
+├── media_file_id
+├── face_embedding (base64)
+├── face_bbox (JSON)
+├── confidence
+└── detected_at
+
+face_groups
+├── id (UUID)
+├── group_name
+├── face_count
+└── timestamps
+
+face_group_members
+├── face_id
+├── group_id
+├── similarity_score
+└── added_at
 ```
 
 ## Usage Examples
@@ -190,6 +294,22 @@ metadata = requests.get(f'http://localhost:3000/api/media/{media_id}').json()
 
 # Download image
 image_data = requests.get(f'http://localhost:3000/api/media/{media_id}/image').content
+
+# Get thumbnail
+thumbnail_data = requests.get(f'http://localhost:3000/api/media/{media_id}/thumbnail').content
+
+# Find duplicates
+duplicates = requests.get('http://localhost:3000/api/duplicates').json()
+
+# Get duplicate statistics
+duplicate_stats = requests.get('http://localhost:3000/api/duplicates/stats').json()
+
+# Get faces in an image
+faces = requests.get(f'http://localhost:3000/api/media/{media_id}/faces').json()
+
+# Create a face group
+group = requests.post('http://localhost:3000/api/faces/groups',
+                      json={'name': 'Family'}).json()
 ```
 
 ### cURL Examples
@@ -207,6 +327,21 @@ curl http://localhost:3000/api/stats | jq
 
 # Monitor with Prometheus
 curl http://localhost:3000/metrics | grep media_files
+
+# Find duplicate files
+curl http://localhost:3000/api/duplicates
+
+# Get duplicate statistics
+curl http://localhost:3000/api/duplicates/stats
+
+# Suggest files to remove (keeping newest)
+curl "http://localhost:3000/api/duplicates/cleanup?keep_newest=true"
+
+# Get detected faces for an image
+curl http://localhost:3000/api/media/{media_id}/faces
+
+# List face groups
+curl http://localhost:3000/api/faces/groups
 ```
 
 ## Performance
@@ -222,6 +357,8 @@ curl http://localhost:3000/metrics | grep media_files
 ### Requirements
 - Rust 1.75+
 - SQLite 3.35+
+- FFmpeg (optional, for video thumbnail generation)
+- ONNX Runtime (optional, for face detection)
 
 ### Building from Source
 ```bash
@@ -291,14 +428,17 @@ scrape_configs:
 
 ## Roadmap
 
-- [ ] Thumbnail generation
+- [x] Thumbnail generation
 - [ ] Video preview extraction  
-- [ ] Duplicate detection
-- [ ] Face recognition
+- [x] Duplicate detection
+- [x] Face recognition
 - [ ] S3/Cloud storage support
 - [ ] WebSocket real-time updates
 - [ ] Batch operations API
 - [ ] Plugin system
+- [ ] Auto-grouping by date/location
+- [ ] Smart album creation
+- [ ] OCR text extraction from images
 
 ## Contributing
 

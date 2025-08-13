@@ -1,4 +1,7 @@
 pub mod metadata;
+pub mod thumbnail;
+pub mod face_recognition;
+pub mod duplicate;
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
@@ -10,14 +13,33 @@ use walkdir::WalkDir;
 use crate::db::Database;
 use crate::models::{MediaMetadata, ScanProgress};
 use metadata::MetadataExtractor;
+use thumbnail::ThumbnailGenerator;
+use face_recognition::FaceDetector;
+use duplicate::DuplicateDetector;
 
 pub struct MediaScanner {
     db: Database,
+    thumbnail_generator: Option<ThumbnailGenerator>,
+    face_detector: Option<FaceDetector>,
 }
 
 impl MediaScanner {
     pub fn new(db: Database) -> Self {
-        Self { db }
+        Self { 
+            db,
+            thumbnail_generator: None,
+            face_detector: None,
+        }
+    }
+
+    pub fn with_thumbnail_generator(mut self, output_dir: PathBuf) -> Self {
+        self.thumbnail_generator = Some(ThumbnailGenerator::new(output_dir));
+        self
+    }
+
+    pub fn with_face_detection(mut self) -> Result<Self> {
+        self.face_detector = Some(FaceDetector::new()?);
+        Ok(self)
     }
 
     pub async fn scan_directory(&self, path: &Path) -> Result<ScanStats> {
@@ -83,10 +105,43 @@ impl MediaScanner {
                     if let Err(e) = self.db.insert_media_file(&metadata).await {
                         error!("Failed to insert media file: {}", e);
                         stats.error_count += 1;
-                    } else if is_new {
-                        files_added += 1;
                     } else {
-                        files_updated += 1;
+                        if is_new {
+                            files_added += 1;
+                        } else {
+                            files_updated += 1;
+                        }
+
+                        // Generate thumbnail for images and videos
+                        if let Some(ref gen) = self.thumbnail_generator {
+                            if metadata.media_type == crate::models::MediaType::Image {
+                                if let Err(e) = gen.generate_thumbnail(Path::new(&metadata.file_path), &metadata.id).await {
+                                    warn!("Failed to generate thumbnail for {}: {}", metadata.file_path, e);
+                                }
+                            } else if metadata.media_type == crate::models::MediaType::Video {
+                                if let Err(e) = gen.generate_video_thumbnail(Path::new(&metadata.file_path), &metadata.id).await {
+                                    warn!("Failed to generate video thumbnail for {}: {}", metadata.file_path, e);
+                                }
+                            }
+                        }
+
+                        // Detect faces in images
+                        if let Some(ref detector) = self.face_detector {
+                            if metadata.media_type == crate::models::MediaType::Image {
+                                match detector.detect_faces(Path::new(&metadata.file_path), &metadata.id).await {
+                                    Ok(faces) => {
+                                        for face in faces {
+                                            if let Err(e) = self.db.insert_face(&face).await {
+                                                warn!("Failed to insert face: {}", e);
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to detect faces in {}: {}", metadata.file_path, e);
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     if (files_added + files_updated) % 100 == 0 {

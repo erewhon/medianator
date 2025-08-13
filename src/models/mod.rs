@@ -67,6 +67,9 @@ pub struct MediaFile {
     pub indexed_at: DateTime<Utc>,
     pub last_scanned_at: DateTime<Utc>,
     
+    pub thumbnail_path: Option<String>,
+    pub thumbnail_generated_at: Option<DateTime<Utc>>,
+    
     pub extra_metadata: Option<String>,
 }
 
@@ -143,4 +146,67 @@ pub struct ScanProgress {
     pub files_processed: usize,
     pub files_pending: usize,
     pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Duplicate {
+    pub id: i32,
+    pub file_hash: String,
+    pub file_paths: String, // JSON array
+    pub file_count: i32,
+    pub total_size: i64,
+    pub first_seen_at: DateTime<Utc>,
+    pub last_updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DuplicateGroup {
+    pub hash: String,
+    pub files: Vec<DuplicateFile>,
+    pub total_size: i64,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DuplicateFile {
+    pub id: String,
+    pub path: String,
+    pub size: i64,
+    pub modified_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Face {
+    pub id: String,
+    pub media_file_id: String,
+    pub face_embedding: String, // Base64 encoded embedding
+    pub face_bbox: String, // JSON
+    pub confidence: f32,
+    pub detected_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FaceBoundingBox {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct FaceGroup {
+    pub id: String,
+    pub group_name: Option<String>,
+    pub face_count: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FaceGroupMember {
+    pub face_id: String,
+    pub group_id: String,
+    pub similarity_score: f32,
+    pub media_file_path: String,
+    pub face_bbox: FaceBoundingBox,
 }
