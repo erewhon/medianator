@@ -399,9 +399,236 @@ pub async fn upload_file(
     Ok(Json(ApiResponse::error("No file provided".to_string())))
 }
 
+pub async fn reprocess_media(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<String>>, StatusCode> {
+    // Get the media file from database
+    let media = match state.db.get_media_by_id(&id).await {
+        Ok(Some(m)) => m,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Database error: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    let scanner = state.scanner.clone();
+    let db = state.db.clone();
+    let file_path = media.file_path.clone();
+    let media_id = media.id.clone();
+    
+    // Spawn reprocessing task
+    tokio::spawn(async move {
+        tracing::info!("Reprocessing media file: {}", file_path);
+        
+        // Re-extract metadata
+        if let Ok(metadata) = crate::scanner::metadata::MetadataExtractor::extract(
+            std::path::Path::new(&file_path)
+        ).await {
+            if let Err(e) = db.insert_media_file(&metadata).await {
+                tracing::error!("Failed to update metadata: {}", e);
+            }
+        }
+        
+        // Re-run face detection if enabled
+        if let Some(ref detector) = scanner.face_detector {
+            if media.media_type == "image" {
+                // First, delete existing faces for this media
+                if let Err(e) = db.delete_faces_for_media(&media_id).await {
+                    tracing::warn!("Failed to delete old faces: {}", e);
+                }
+                
+                // Detect new faces
+                match detector.detect_faces(std::path::Path::new(&file_path), &media_id).await {
+                    Ok(faces) => {
+                        tracing::info!("Detected {} faces in reprocessed image", faces.len());
+                        for face in faces {
+                            if let Err(e) = db.insert_face(&face).await {
+                                tracing::error!("Failed to insert face: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to detect faces: {}", e);
+                    }
+                }
+            }
+        }
+        
+        // Re-generate thumbnail if configured
+        if let Some(ref gen) = scanner.thumbnail_generator {
+            if media.media_type == "image" {
+                if let Err(e) = gen.generate_thumbnail(
+                    std::path::Path::new(&file_path), 
+                    &media_id
+                ).await {
+                    tracing::warn!("Failed to regenerate thumbnail: {}", e);
+                }
+            } else if media.media_type == "video" {
+                if let Err(e) = gen.generate_video_thumbnail(
+                    std::path::Path::new(&file_path),
+                    &media_id
+                ).await {
+                    tracing::warn!("Failed to regenerate video thumbnail: {}", e);
+                }
+            }
+        }
+    });
+
+    Ok(Json(ApiResponse::success(
+        format!("Reprocessing started for media {}", id)
+    )))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchReprocessRequest {
+    pub media_ids: Vec<String>,
+    pub reprocess_faces: bool,
+    pub reprocess_thumbnails: bool,
+    pub reprocess_metadata: bool,
+}
+
+pub async fn batch_reprocess(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<BatchReprocessRequest>,
+) -> Result<Json<ApiResponse<String>>, StatusCode> {
+    let scanner = state.scanner.clone();
+    let db = state.db.clone();
+    let media_ids = req.media_ids.clone();
+    
+    tokio::spawn(async move {
+        let mut processed = 0;
+        let mut errors = 0;
+        
+        for media_id in media_ids {
+            // Get media file
+            let media = match db.get_media_by_id(&media_id).await {
+                Ok(Some(m)) => m,
+                Ok(None) => {
+                    errors += 1;
+                    continue;
+                }
+                Err(e) => {
+                    tracing::error!("Failed to get media {}: {}", media_id, e);
+                    errors += 1;
+                    continue;
+                }
+            };
+            
+            let file_path = std::path::Path::new(&media.file_path);
+            
+            // Reprocess metadata if requested
+            if req.reprocess_metadata {
+                if let Ok(metadata) = crate::scanner::metadata::MetadataExtractor::extract(file_path).await {
+                    if let Err(e) = db.insert_media_file(&metadata).await {
+                        tracing::error!("Failed to update metadata for {}: {}", media_id, e);
+                        errors += 1;
+                    }
+                }
+            }
+            
+            // Reprocess faces if requested
+            if req.reprocess_faces && media.media_type == "image" {
+                if let Some(ref detector) = scanner.face_detector {
+                    // Delete old faces
+                    if let Err(e) = db.delete_faces_for_media(&media_id).await {
+                        tracing::warn!("Failed to delete old faces for {}: {}", media_id, e);
+                    }
+                    
+                    // Detect new faces
+                    match detector.detect_faces(file_path, &media_id).await {
+                        Ok(faces) => {
+                            for face in faces {
+                                if let Err(e) = db.insert_face(&face).await {
+                                    tracing::error!("Failed to insert face: {}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to detect faces for {}: {}", media_id, e);
+                            errors += 1;
+                        }
+                    }
+                }
+            }
+            
+            // Reprocess thumbnails if requested
+            if req.reprocess_thumbnails {
+                if let Some(ref gen) = scanner.thumbnail_generator {
+                    if media.media_type == "image" {
+                        if let Err(e) = gen.generate_thumbnail(file_path, &media_id).await {
+                            tracing::error!("Failed to regenerate thumbnail for {}: {}", media_id, e);
+                            errors += 1;
+                        }
+                    } else if media.media_type == "video" {
+                        if let Err(e) = gen.generate_video_thumbnail(file_path, &media_id).await {
+                            tracing::error!("Failed to regenerate video thumbnail for {}: {}", media_id, e);
+                            errors += 1;
+                        }
+                    }
+                }
+            }
+            
+            processed += 1;
+        }
+        
+        tracing::info!(
+            "Batch reprocessing complete: {} processed, {} errors",
+            processed, errors
+        );
+    });
+
+    Ok(Json(ApiResponse::success(
+        format!("Batch reprocessing started for {} media files", req.media_ids.len())
+    )))
+}
+
+pub async fn get_faces_grouped(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, StatusCode> {
+    // Get all face groups with their members
+    match state.db.get_face_groups_with_members().await {
+        Ok(groups) => Ok(Json(ApiResponse::success(groups))),
+        Err(e) => {
+            tracing::error!("Failed to get grouped faces: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 pub async fn serve_index() -> Html<String> {
     match fs::read_to_string("static/index.html").await {
         Ok(html) => Html(html),
-        Err(_) => Html("<h1>Error loading page</h1>".to_string()),
+        Err(e) => {
+            tracing::error!("Failed to read index.html: {}", e);
+            // Fallback to embedded HTML
+            Html(r#"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medianator - Media Catalog</title>
+</head>
+<body>
+    <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+        <h1>Medianator</h1>
+        <p>Error loading the main interface.</p>
+        <p style="color: #666;">Make sure the static files are present in the static/ directory.</p>
+        <p>Error: Could not read static/index.html</p>
+        <hr>
+        <p>API is running. You can access:</p>
+        <ul style="list-style: none; padding: 0;">
+            <li><a href="/health">/health</a> - Health check</li>
+            <li><a href="/api/stats">/api/stats</a> - Statistics</li>
+            <li><a href="/api/media">/api/media</a> - Media list</li>
+            <li><a href="/metrics">/metrics</a> - Prometheus metrics</li>
+        </ul>
+    </div>
+</body>
+</html>
+            "#.to_string())
+        }
     }
 }

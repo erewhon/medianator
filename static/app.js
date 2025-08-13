@@ -89,7 +89,7 @@ function displayMedia(items) {
         
         if (isGridView) {
             return `
-                <div class="media-item" data-id="${item.id}">
+                <div class="media-item gallery-item" data-id="${item.id}" data-media-id="${item.id}">
                     ${item.thumbnail_path || item.media_type === 'image' ? 
                         `<img src="${item.media_type === 'image' ? `/api/media/${item.id}/image` : thumbnail}" alt="${item.file_name}" class="media-thumbnail">` :
                         `<div class="media-thumbnail" style="display: flex; align-items: center; justify-content: center; background: #f8f9fa; font-size: 3em;">${getMediaEmoji(item.media_type)}</div>`
@@ -101,7 +101,7 @@ function displayMedia(items) {
             `;
         } else {
             return `
-                <div class="media-item" data-id="${item.id}">
+                <div class="media-item gallery-item" data-id="${item.id}" data-media-id="${item.id}">
                     ${item.thumbnail_path || item.media_type === 'image' ? 
                         `<img src="${item.media_type === 'image' ? `/api/media/${item.id}/image` : thumbnail}" alt="${item.file_name}" class="media-thumbnail">` :
                         `<div class="media-thumbnail" style="display: flex; align-items: center; justify-content: center; background: #f8f9fa;">${getMediaEmoji(item.media_type)}</div>`
@@ -139,6 +139,7 @@ async function showMediaDetail(mediaId) {
         if (mediaData.success) {
             const media = mediaData.data;
             const modal = document.getElementById('media-modal');
+            modal.dataset.currentMediaId = mediaId;
             
             // Set basic info
             document.getElementById('media-filename').textContent = media.file_name;
@@ -473,3 +474,295 @@ function getMediaEmoji(type) {
 function getPlaceholderIcon(type) {
     return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' fill='%23f8f9fa'/%3E%3Ctext x='50' y='50' font-size='40' text-anchor='middle' dominant-baseline='middle'%3E${getMediaEmoji(type)}%3C/text%3E%3C/svg%3E`;
 }
+
+// Selection mode for batch processing
+let selectionMode = false;
+let selectedMedia = new Set();
+
+// Initialize batch reprocess functionality
+function initBatchReprocess() {
+    const batchBtn = document.getElementById('batch-reprocess-btn');
+    const modal = document.getElementById('batch-reprocess-modal');
+    const closeBtn = document.getElementById('close-batch-modal');
+    const cancelBtn = document.getElementById('cancel-batch-reprocess');
+    const startBtn = document.getElementById('start-batch-reprocess');
+    
+    if (batchBtn) {
+        batchBtn.addEventListener('click', () => {
+            if (!selectionMode) {
+                enterSelectionMode();
+            } else {
+                showBatchReprocessModal();
+            }
+        });
+    }
+    
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            modal.classList.add('hidden');
+        });
+    }
+    
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+            modal.classList.add('hidden');
+            exitSelectionMode();
+        });
+    }
+    
+    if (startBtn) {
+        startBtn.addEventListener('click', async () => {
+            await startBatchReprocess();
+            modal.classList.add('hidden');
+            exitSelectionMode();
+        });
+    }
+}
+
+function enterSelectionMode() {
+    selectionMode = true;
+    selectedMedia.clear();
+    
+    const gallery = document.getElementById('gallery');
+    const items = gallery.querySelectorAll('.gallery-item');
+    
+    items.forEach(item => {
+        item.classList.add('selectable');
+        item.addEventListener('click', toggleSelection);
+    });
+    
+    const batchBtn = document.getElementById('batch-reprocess-btn');
+    if (batchBtn) {
+        batchBtn.textContent = '✅ Confirm Selection';
+    }
+}
+
+function exitSelectionMode() {
+    selectionMode = false;
+    
+    const gallery = document.getElementById('gallery');
+    const items = gallery.querySelectorAll('.gallery-item');
+    
+    items.forEach(item => {
+        item.classList.remove('selectable', 'selected');
+        item.removeEventListener('click', toggleSelection);
+    });
+    
+    selectedMedia.clear();
+    
+    const batchBtn = document.getElementById('batch-reprocess-btn');
+    if (batchBtn) {
+        batchBtn.textContent = '♻️ Batch Reprocess';
+    }
+}
+
+function toggleSelection(e) {
+    e.stopPropagation();
+    const item = e.currentTarget;
+    const mediaId = item.dataset.mediaId;
+    
+    if (selectedMedia.has(mediaId)) {
+        selectedMedia.delete(mediaId);
+        item.classList.remove('selected');
+    } else {
+        selectedMedia.add(mediaId);
+        item.classList.add('selected');
+    }
+}
+
+function showBatchReprocessModal() {
+    if (selectedMedia.size === 0) {
+        alert('Please select at least one media file');
+        return;
+    }
+    
+    const modal = document.getElementById('batch-reprocess-modal');
+    const countSpan = document.getElementById('selected-media-count');
+    
+    if (countSpan) {
+        countSpan.textContent = selectedMedia.size;
+    }
+    
+    modal.classList.remove('hidden');
+}
+
+async function startBatchReprocess() {
+    const reprocessFaces = document.getElementById('reprocess-faces').checked;
+    const reprocessThumbnails = document.getElementById('reprocess-thumbnails').checked;
+    const reprocessMetadata = document.getElementById('reprocess-metadata').checked;
+    
+    const mediaIds = Array.from(selectedMedia);
+    
+    try {
+        const response = await fetch('/api/batch/reprocess', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                media_ids: mediaIds,
+                reprocess_faces: reprocessFaces,
+                reprocess_thumbnails: reprocessThumbnails,
+                reprocess_metadata: reprocessMetadata
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert(result.data || 'Batch reprocessing started');
+            // Reload gallery after a delay to show updated data
+            setTimeout(() => loadGallery(), 2000);
+        } else {
+            alert('Error: ' + (result.error || 'Failed to start batch reprocessing'));
+        }
+    } catch (error) {
+        console.error('Error starting batch reprocess:', error);
+        alert('Failed to start batch reprocessing');
+    }
+}
+
+// Single file reprocess
+async function reprocessSingleFile(mediaId) {
+    try {
+        const response = await fetch(`/api/media/${mediaId}/reprocess`, {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert(result.data || 'Reprocessing started');
+            // Reload the modal data after a delay
+            setTimeout(() => {
+                const modal = document.getElementById('media-modal');
+                if (!modal.classList.contains('hidden')) {
+                    // Refresh the modal content
+                    const event = new CustomEvent('refresh-media', { detail: { mediaId } });
+                    document.dispatchEvent(event);
+                }
+            }, 2000);
+        } else {
+            alert('Error: ' + (result.error || 'Failed to start reprocessing'));
+        }
+    } catch (error) {
+        console.error('Error reprocessing file:', error);
+        alert('Failed to start reprocessing');
+    }
+}
+
+// Face groups viewing
+async function loadFaceGroups() {
+    try {
+        const response = await fetch('/api/faces/grouped');
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            displayFaceGroups(result.data);
+        }
+    } catch (error) {
+        console.error('Error loading face groups:', error);
+    }
+}
+
+function displayFaceGroups(groups) {
+    const container = document.getElementById('face-groups-container');
+    
+    if (!container) return;
+    
+    if (groups.length === 0) {
+        container.innerHTML = '<p>No face groups found. Process some images with face detection enabled.</p>';
+        return;
+    }
+    
+    container.innerHTML = groups.map(group => `
+        <div class="face-group">
+            <h3>${group.group_name || `Group ${group.group_id}`} (${group.face_count} faces)</h3>
+            <div class="face-group-faces">
+                ${group.faces.map(face => `
+                    <div class="face-item" data-media-id="${face.media_file_id}">
+                        <img src="/api/media/${face.media_file_id}/thumbnail" 
+                             alt="${face.file_name}"
+                             onerror="this.src='${getPlaceholderIcon('image')}'">
+                        <span class="face-confidence">${Math.round(face.confidence * 100)}%</span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `).join('');
+    
+    // Add click handlers to face items
+    container.querySelectorAll('.face-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const mediaId = item.dataset.mediaId;
+            if (mediaId) {
+                // Load the media detail modal
+                loadMediaDetail(mediaId);
+            }
+        });
+    });
+}
+
+// Initialize face viewing
+function initFaceViewing() {
+    const viewFacesBtn = document.getElementById('view-faces-btn');
+    const modal = document.getElementById('faces-modal');
+    const closeBtn = document.getElementById('close-faces-modal');
+    
+    if (viewFacesBtn) {
+        viewFacesBtn.addEventListener('click', async () => {
+            await loadFaceGroups();
+            modal.classList.remove('hidden');
+        });
+    }
+    
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            modal.classList.add('hidden');
+        });
+    }
+}
+
+// Load media detail for face viewing
+async function loadMediaDetail(mediaId) {
+    try {
+        const response = await fetch(`/api/media/${mediaId}`);
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            showMediaDetail(result.data);
+        }
+    } catch (error) {
+        console.error('Error loading media detail:', error);
+    }
+}
+
+// Update the DOMContentLoaded event listener
+document.addEventListener('DOMContentLoaded', () => {
+    loadStats();
+    loadGallery();
+    setupEventListeners();
+    setupUploadArea();
+    initBatchReprocess();
+    initFaceViewing();
+    
+    // Add reprocess button handler for single files
+    const reprocessBtn = document.getElementById('reprocess-single-btn');
+    if (reprocessBtn) {
+        reprocessBtn.addEventListener('click', () => {
+            const modal = document.getElementById('media-modal');
+            const mediaId = modal.dataset.currentMediaId;
+            if (mediaId) {
+                reprocessSingleFile(mediaId);
+            }
+        });
+    }
+    
+    // Listen for media refresh events
+    document.addEventListener('refresh-media', async (e) => {
+        const mediaId = e.detail.mediaId;
+        if (mediaId) {
+            await loadMediaDetail(mediaId);
+        }
+    });
+});

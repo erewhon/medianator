@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Medianator - Media Catalog</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
@@ -83,6 +83,8 @@
                 <button class="view-btn" data-view="list">List View</button>
                 <button id="scan-btn" class="action-btn">🔄 Scan Directory</button>
                 <button id="duplicates-btn" class="action-btn">🔍 Find Duplicates</button>
+                <button id="batch-reprocess-btn" class="action-btn">♾️ Batch Reprocess</button>
+                <button id="view-faces-btn" class="action-btn">👤 View Faces</button>
             </div>
             <div id="gallery" class="gallery grid-view">
                 <!-- Media items will be loaded here -->
@@ -172,6 +174,9 @@
                         <h4>👤 Detected Faces</h4>
                         <div id="faces-list"></div>
                     </div>
+                    <div class="media-actions">
+                        <button id="reprocess-single-btn" class="action-btn">🔄 Reprocess This File</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -187,6 +192,46 @@
         </div>
     </div>
 
-    <script src="/static/app.js"></script>
+    <!-- Batch Reprocess Modal -->
+    <div id="batch-reprocess-modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close" id="close-batch-modal">&times;</span>
+            <h2>Batch Reprocess Options</h2>
+            <div class="selected-count">
+                <p>Selected items: <span id="selected-media-count">0</span></p>
+            </div>
+            <div class="reprocess-options">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="reprocess-faces" checked>
+                    <span>Reprocess Face Detection</span>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="reprocess-thumbnails" checked>
+                    <span>Regenerate Thumbnails</span>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="reprocess-metadata" checked>
+                    <span>Update Metadata</span>
+                </label>
+            </div>
+            <div class="modal-actions">
+                <button id="start-batch-reprocess" class="primary-btn">Start Reprocessing</button>
+                <button id="cancel-batch-reprocess" class="secondary-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Faces View Modal -->
+    <div id="faces-modal" class="modal hidden">
+        <div class="modal-content large">
+            <span class="close" id="close-faces-modal">&times;</span>
+            <h2>Face Groups</h2>
+            <div id="face-groups-container" class="face-groups-container">
+                <!-- Face groups will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
 </body>
 </html>

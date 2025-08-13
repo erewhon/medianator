@@ -13,7 +13,7 @@ A high-performance asynchronous media catalog engine written in Rust that scans,
   - SHA-256 file hashing for deduplication
 - **🖼️ Thumbnail Generation**: Automatic thumbnail creation for images and videos
 - **🔄 Duplicate Detection**: Find and manage duplicate files based on content hash
-- **👤 Face Recognition**: Detect faces in images and group similar faces together
+- **👤 Face Detection**: Detect faces in images using skin-tone detection and group similar faces together
 - **🎨 Web UI**: Beautiful web interface for browsing, searching, and uploading media
 - **💾 SQLite Storage**: Lightweight embedded database with full-text search
 - **🌐 RESTful API**: Complete web API with CORS support
@@ -146,6 +146,44 @@ Streams the actual image file (images only).
 GET /api/media/{id}/thumbnail
 ```
 Streams the thumbnail image for a media file.
+
+### Face Detection Endpoints
+
+#### Get Faces for Media
+```http
+GET /api/media/{id}/faces
+```
+Returns detected faces for a specific media file.
+
+#### List Face Groups
+```http
+GET /api/faces/groups
+```
+Returns all face groups with similarity clustering.
+
+#### Create Face Group
+```http
+POST /api/faces/groups
+Content-Type: application/json
+
+{
+  "name": "Family Photos"
+}
+```
+Creates a new face group for organizing similar faces.
+
+#### Add Face to Group
+```http
+POST /api/faces/groups/add
+Content-Type: application/json
+
+{
+  "face_id": "face_123",
+  "group_id": "group_456",
+  "similarity_score": 0.85
+}
+```
+Adds a detected face to a face group.
 
 #### Start Scan
 ```http

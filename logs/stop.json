@@ -110,5 +110,54 @@
     "cwd": "/Users/erewhon/Projects/erewhon/medianator",
     "hook_event_name": "Stop",
     "stop_hook_active": false
+  },
+  {
+    "session_id": "a5b806f4-cad2-4cf2-801f-2f661922a14c",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/a5b806f4-cad2-4cf2-801f-2f661922a14c.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "session_id": "a5b806f4-cad2-4cf2-801f-2f661922a14c",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/a5b806f4-cad2-4cf2-801f-2f661922a14c.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "session_id": "a5b806f4-cad2-4cf2-801f-2f661922a14c",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/a5b806f4-cad2-4cf2-801f-2f661922a14c.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "session_id": "a5b806f4-cad2-4cf2-801f-2f661922a14c",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/a5b806f4-cad2-4cf2-801f-2f661922a14c.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "session_id": "a5b806f4-cad2-4cf2-801f-2f661922a14c",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/a5b806f4-cad2-4cf2-801f-2f661922a14c.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "session_id": "a5b806f4-cad2-4cf2-801f-2f661922a14c",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/a5b806f4-cad2-4cf2-801f-2f661922a14c.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "session_id": "a5b806f4-cad2-4cf2-801f-2f661922a14c",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/a5b806f4-cad2-4cf2-801f-2f661922a14c.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
   }
 ]

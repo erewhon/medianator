@@ -45,7 +45,11 @@ async fn main() -> Result<()> {
             }
             Err(e) => {
                 warn!("Failed to enable face detection: {}", e);
-                scanner
+                // Create a new scanner since the old one was consumed
+                MediaScanner::new(db.clone())
+                    .with_thumbnail_generator(std::path::PathBuf::from(
+                        std::env::var("THUMBNAILS_DIR").unwrap_or_default()
+                    ))
             }
         };
     }

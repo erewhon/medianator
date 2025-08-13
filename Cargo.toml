@@ -25,11 +25,8 @@ kamadak-exif = "0.5"
 symphonia = { version = "0.5", features = ["all"] }
 mp4 = "0.14"
 
-# Thumbnail generation
+# Image processing
 imageproc = "0.25"
-
-# Face recognition
-ort = { version = "2.0.0-rc.10", features = ["download-binaries"] }
 ndarray = "0.16"
 
 # File handling

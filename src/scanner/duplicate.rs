@@ -31,17 +31,26 @@ impl DuplicateDetector {
             ORDER BY total_size DESC
         "#;
 
-        let rows = sqlx::query!(query)
+        let rows = sqlx::query(query)
             .fetch_all(&self.pool)
             .await?;
 
         let mut duplicate_groups = Vec::new();
 
         for row in rows {
-            let ids: Vec<&str> = row.ids.as_ref().map_or(vec![], |s| s.split("||").collect());
-            let paths: Vec<&str> = row.paths.as_ref().map_or(vec![], |s| s.split("||").collect());
-            let sizes: Vec<&str> = row.sizes.as_ref().map_or(vec![], |s| s.split("||").collect());
-            let modified: Vec<&str> = row.modified_dates.as_ref().map_or(vec![], |s| s.split("||").collect());
+            use sqlx::Row;
+            let file_hash: String = row.get("file_hash");
+            let ids: Option<String> = row.get("ids");
+            let paths: Option<String> = row.get("paths");
+            let sizes: Option<String> = row.get("sizes");
+            let modified_dates: Option<String> = row.get("modified_dates");
+            let count: i64 = row.get("count");
+            let total_size: Option<i64> = row.get("total_size");
+            
+            let ids: Vec<&str> = ids.as_ref().map_or(vec![], |s| s.split("||").collect());
+            let paths: Vec<&str> = paths.as_ref().map_or(vec![], |s| s.split("||").collect());
+            let sizes: Vec<&str> = sizes.as_ref().map_or(vec![], |s| s.split("||").collect());
+            let modified: Vec<&str> = modified_dates.as_ref().map_or(vec![], |s| s.split("||").collect());
 
             let mut files = Vec::new();
             for i in 0..ids.len() {
@@ -56,10 +65,10 @@ impl DuplicateDetector {
             }
 
             duplicate_groups.push(DuplicateGroup {
-                hash: row.file_hash,
+                hash: file_hash,
                 files,
-                total_size: row.total_size.unwrap_or(0),
-                count: row.count.unwrap_or(0) as usize,
+                total_size: total_size.unwrap_or(0),
+                count: count as usize,
             });
         }
 
@@ -84,7 +93,7 @@ impl DuplicateDetector {
 
     pub async fn update_duplicates_table(&self) -> Result<()> {
         // Clear existing duplicates table
-        sqlx::query!("DELETE FROM duplicates")
+        sqlx::query("DELETE FROM duplicates")
             .execute(&self.pool)
             .await?;
 
@@ -101,7 +110,7 @@ impl DuplicateDetector {
             HAVING COUNT(*) > 1
         "#;
 
-        let result = sqlx::query!(query)
+        let result = sqlx::query(query)
             .execute(&self.pool)
             .await?;
 
@@ -118,14 +127,19 @@ impl DuplicateDetector {
             FROM duplicates
         "#;
 
-        let row = sqlx::query!(query)
+        let row = sqlx::query(query)
             .fetch_one(&self.pool)
             .await?;
 
+        use sqlx::Row;
+        let duplicate_groups: Option<i64> = row.get("duplicate_groups");
+        let redundant_files: Option<i64> = row.get("redundant_files");
+        let wasted_space: Option<i64> = row.get("wasted_space");
+        
         Ok(DuplicateStats {
-            duplicate_groups: row.duplicate_groups.unwrap_or(0) as usize,
-            redundant_files: row.redundant_files.unwrap_or(0) as usize,
-            wasted_space: row.wasted_space.unwrap_or(0) as i64,
+            duplicate_groups: duplicate_groups.unwrap_or(0) as usize,
+            redundant_files: redundant_files.unwrap_or(0) as usize,
+            wasted_space: wasted_space.unwrap_or(0),
         })
     }
 

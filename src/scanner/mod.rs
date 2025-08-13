@@ -2,6 +2,7 @@ pub mod metadata;
 pub mod thumbnail;
 pub mod face_recognition;
 pub mod duplicate;
+pub mod viola_jones_detector;
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
@@ -14,13 +15,12 @@ use crate::db::Database;
 use crate::models::{MediaMetadata, ScanProgress};
 use metadata::MetadataExtractor;
 use thumbnail::ThumbnailGenerator;
-use face_recognition::FaceDetector;
-use duplicate::DuplicateDetector;
+use viola_jones_detector::ViolaJonesFaceDetector;
 
 pub struct MediaScanner {
     db: Database,
-    thumbnail_generator: Option<ThumbnailGenerator>,
-    face_detector: Option<FaceDetector>,
+    pub thumbnail_generator: Option<ThumbnailGenerator>,
+    pub face_detector: Option<ViolaJonesFaceDetector>,
 }
 
 impl MediaScanner {
@@ -38,7 +38,7 @@ impl MediaScanner {
     }
 
     pub fn with_face_detection(mut self) -> Result<Self> {
-        self.face_detector = Some(FaceDetector::new()?);
+        self.face_detector = Some(ViolaJonesFaceDetector::new()?);
         Ok(self)
     }
 

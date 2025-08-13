@@ -29,7 +29,6 @@ pub fn create_app(db: Database, scanner: MediaScanner) -> Router {
         .allow_headers(Any);
 
     Router::new()
-        .route("/", get(handlers::serve_index))
         .route("/health", get(handlers::health_check))
         .route("/api/media", get(handlers::list_media))
         .route("/api/media/search", get(handlers::search_media))
@@ -47,8 +46,11 @@ pub fn create_app(db: Database, scanner: MediaScanner) -> Router {
         .route("/api/faces/groups", get(handlers::get_face_groups))
         .route("/api/faces/groups", post(handlers::create_face_group))
         .route("/api/faces/groups/add", post(handlers::add_face_to_group))
+        .route("/api/faces/grouped", get(handlers::get_faces_grouped))
+        .route("/api/media/:id/reprocess", post(handlers::reprocess_media))
+        .route("/api/batch/reprocess", post(handlers::batch_reprocess))
         .route("/metrics", get(metrics::metrics_handler))
-        .nest_service("/static", ServeDir::new("static"))
+        .fallback_service(ServeDir::new("static").append_index_html_on_directories(true))
         .layer(MetricsMiddleware::new())
         .layer(cors)
         .layer(TraceLayer::new_for_http())
