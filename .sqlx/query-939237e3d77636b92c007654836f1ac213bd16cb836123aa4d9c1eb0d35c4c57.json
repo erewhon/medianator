@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            UPDATE scan_history\n            SET completed_at = CURRENT_TIMESTAMP,\n                status = ?2\n            WHERE id = ?1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "939237e3d77636b92c007654836f1ac213bd16cb836123aa4d9c1eb0d35c4c57"
+}

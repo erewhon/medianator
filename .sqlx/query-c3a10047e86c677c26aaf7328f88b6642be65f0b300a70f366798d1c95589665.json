@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            UPDATE scan_history\n            SET files_scanned = ?2,\n                files_added = ?3,\n                files_updated = ?4,\n                error_count = ?5\n            WHERE id = ?1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "c3a10047e86c677c26aaf7328f88b6642be65f0b300a70f366798d1c95589665"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO face_group_members (face_id, group_id, similarity_score)\n            VALUES (?1, ?2, ?3)\n            ON CONFLICT(face_id, group_id) DO UPDATE SET\n                similarity_score = excluded.similarity_score\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "a67a3da100999421e5c0b5f675e16859ab97ed45fcd4128c19924be6b35fde13"
+}

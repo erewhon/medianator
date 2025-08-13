@@ -8,7 +8,7 @@ edition = "2021"
 tokio = { version = "1.40", features = ["full"] }
 
 # Web framework
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.7", features = ["macros", "multipart"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs", "trace", "cors"] }
 
@@ -29,7 +29,7 @@ mp4 = "0.14"
 imageproc = "0.25"
 
 # Face recognition
-ort = { version = "2.0", features = ["download-binaries"] }
+ort = { version = "2.0.0-rc.10", features = ["download-binaries"] }
 ndarray = "0.16"
 
 # File handling
@@ -49,6 +49,7 @@ config = "0.14"
 
 # Metrics
 prometheus = "0.13"
+lazy_static = "1.5"
 
 # Date/time
 chrono = { version = "0.4", features = ["serde"] }

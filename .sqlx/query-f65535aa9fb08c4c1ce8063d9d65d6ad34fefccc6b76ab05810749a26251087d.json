@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO face_groups (id, group_name)\n            VALUES (?1, ?2)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "f65535aa9fb08c4c1ce8063d9d65d6ad34fefccc6b76ab05810749a26251087d"
+}

@@ -1,0 +1,194 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                SELECT * FROM media_files\n                WHERE media_type = ?1\n                ORDER BY indexed_at DESC\n                LIMIT ?2 OFFSET ?3\n                ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "file_path",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "file_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "file_size",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "file_hash",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "media_type",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "mime_type",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "width",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "height",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "duration_seconds",
+        "ordinal": 9,
+        "type_info": "Float"
+      },
+      {
+        "name": "bit_rate",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "camera_make",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "camera_model",
+        "ordinal": 12,
+        "type_info": "Text"
+      },
+      {
+        "name": "lens_model",
+        "ordinal": 13,
+        "type_info": "Text"
+      },
+      {
+        "name": "focal_length",
+        "ordinal": 14,
+        "type_info": "Float"
+      },
+      {
+        "name": "aperture",
+        "ordinal": 15,
+        "type_info": "Float"
+      },
+      {
+        "name": "iso",
+        "ordinal": 16,
+        "type_info": "Integer"
+      },
+      {
+        "name": "shutter_speed",
+        "ordinal": 17,
+        "type_info": "Text"
+      },
+      {
+        "name": "orientation",
+        "ordinal": 18,
+        "type_info": "Integer"
+      },
+      {
+        "name": "codec",
+        "ordinal": 19,
+        "type_info": "Text"
+      },
+      {
+        "name": "frame_rate",
+        "ordinal": 20,
+        "type_info": "Float"
+      },
+      {
+        "name": "audio_channels",
+        "ordinal": 21,
+        "type_info": "Integer"
+      },
+      {
+        "name": "audio_sample_rate",
+        "ordinal": 22,
+        "type_info": "Integer"
+      },
+      {
+        "name": "file_created_at",
+        "ordinal": 23,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "file_modified_at",
+        "ordinal": 24,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "indexed_at",
+        "ordinal": 25,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "last_scanned_at",
+        "ordinal": 26,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "extra_metadata",
+        "ordinal": 27,
+        "type_info": "Text"
+      },
+      {
+        "name": "thumbnail_path",
+        "ordinal": 28,
+        "type_info": "Text"
+      },
+      {
+        "name": "thumbnail_generated_at",
+        "ordinal": 29,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "c5f8b454aa456717b203c118cf651fd8bc08153054194d196b479882134ffa6e"
+}

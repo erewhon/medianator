@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO scan_history (scan_path, status)\n            VALUES (?1, 'running')\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "5cbb252319773e56e1539af10ef608268f21f46b5d920067d4e5295a78810e26"
+}

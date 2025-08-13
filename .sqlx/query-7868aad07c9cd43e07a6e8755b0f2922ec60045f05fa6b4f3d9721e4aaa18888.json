@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            UPDATE face_groups \n            SET face_count = (SELECT COUNT(*) FROM face_group_members WHERE group_id = ?1),\n                updated_at = CURRENT_TIMESTAMP\n            WHERE id = ?1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "7868aad07c9cd43e07a6e8755b0f2922ec60045f05fa6b4f3d9721e4aaa18888"
+}

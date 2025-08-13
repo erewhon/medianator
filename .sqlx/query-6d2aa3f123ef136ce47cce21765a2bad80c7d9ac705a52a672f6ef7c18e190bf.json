@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO media_files (\n                id, file_path, file_name, file_size, file_hash,\n                media_type, mime_type, width, height, duration_seconds,\n                bit_rate, camera_make, camera_model, lens_model,\n                focal_length, aperture, iso, shutter_speed, orientation,\n                codec, frame_rate, audio_channels, audio_sample_rate,\n                file_created_at, file_modified_at, indexed_at, last_scanned_at,\n                extra_metadata\n            ) VALUES (\n                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,\n                ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19,\n                ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28\n            )\n            ON CONFLICT(file_path) DO UPDATE SET\n                file_size = excluded.file_size,\n                file_hash = excluded.file_hash,\n                mime_type = excluded.mime_type,\n                width = excluded.width,\n                height = excluded.height,\n                duration_seconds = excluded.duration_seconds,\n                last_scanned_at = excluded.last_scanned_at,\n                extra_metadata = excluded.extra_metadata\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 28
+    },
+    "nullable": []
+  },
+  "hash": "6d2aa3f123ef136ce47cce21765a2bad80c7d9ac705a52a672f6ef7c18e190bf"
+}

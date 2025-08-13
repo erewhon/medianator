@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO faces (id, media_file_id, face_embedding, face_bbox, confidence, detected_at)\n            VALUES (?1, ?2, ?3, ?4, ?5, ?6)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "2beb64b1bf90a67c69a2f42bd006733b487faafe054c550d71de3a95aa67290f"
+}

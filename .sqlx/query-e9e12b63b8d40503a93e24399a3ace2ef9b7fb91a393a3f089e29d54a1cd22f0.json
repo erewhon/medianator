@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT file_hash \n            FROM media_files\n            GROUP BY file_hash\n            HAVING COUNT(*) > 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "file_hash",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e9e12b63b8d40503a93e24399a3ace2ef9b7fb91a393a3f089e29d54a1cd22f0"
+}

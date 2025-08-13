@@ -139,7 +139,8 @@ pub async fn start_scan(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ScanRequest>,
 ) -> Result<Json<ApiResponse<ScanStats>>, StatusCode> {
-    let path = std::path::Path::new(&req.path);
+    let path_str = req.path.clone();
+    let path = std::path::Path::new(&path_str);
     
     if !path.exists() || !path.is_dir() {
         return Ok(Json(ApiResponse::error(
@@ -148,8 +149,9 @@ pub async fn start_scan(
     }
 
     let scanner = state.scanner.clone();
+    let path_buf = path.to_path_buf();
     let scan_result = tokio::spawn(async move {
-        scanner.scan_directory(path).await
+        scanner.scan_directory(&path_buf).await
     });
 
     match scan_result.await {

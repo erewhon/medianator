@@ -54,6 +54,7 @@ pub fn init_metrics() {
     prometheus::register(Box::new(SCAN_DURATION.clone())).unwrap();
 }
 
+#[derive(Clone)]
 pub struct MetricsMiddleware;
 
 impl MetricsMiddleware {
@@ -125,7 +126,7 @@ pub async fn metrics_handler() -> impl IntoResponse {
     match encoder.encode(&metric_families, &mut buffer) {
         Ok(_) => (
             StatusCode::OK,
-            [(axum::http::header::CONTENT_TYPE, encoder.format_type())],
+            [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")],
             buffer,
         ),
         Err(e) => {

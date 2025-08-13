@@ -196,7 +196,7 @@ impl MediaScanner {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ScanStats {
     pub files_scanned: usize,
     pub files_added: usize,

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            UPDATE media_files\n            SET thumbnail_path = ?2,\n                thumbnail_generated_at = CURRENT_TIMESTAMP\n            WHERE id = ?1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "d667aa349d10fe9655af2de556b7eae98e6ac6e03bb57bfa706aa0c60def2e92"
+}

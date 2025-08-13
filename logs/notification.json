@@ -26,5 +26,54 @@
     "cwd": "/Users/erewhon/Projects/erewhon/medianator",
     "hook_event_name": "Notification",
     "message": "Claude needs your permission to use Bash"
+  },
+  {
+    "session_id": "af99f83a-08b9-46d8-8b2a-c56945fd0a37",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/af99f83a-08b9-46d8-8b2a-c56945fd0a37.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Bash"
+  },
+  {
+    "session_id": "af99f83a-08b9-46d8-8b2a-c56945fd0a37",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/af99f83a-08b9-46d8-8b2a-c56945fd0a37.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Bash"
+  },
+  {
+    "session_id": "a5b806f4-cad2-4cf2-801f-2f661922a14c",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/a5b806f4-cad2-4cf2-801f-2f661922a14c.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input"
+  },
+  {
+    "session_id": "a5b806f4-cad2-4cf2-801f-2f661922a14c",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/a5b806f4-cad2-4cf2-801f-2f661922a14c.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Bash"
+  },
+  {
+    "session_id": "a5b806f4-cad2-4cf2-801f-2f661922a14c",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/a5b806f4-cad2-4cf2-801f-2f661922a14c.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input"
+  },
+  {
+    "session_id": "a5b806f4-cad2-4cf2-801f-2f661922a14c",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/a5b806f4-cad2-4cf2-801f-2f661922a14c.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Bash"
+  },
+  {
+    "session_id": "a5b806f4-cad2-4cf2-801f-2f661922a14c",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/a5b806f4-cad2-4cf2-801f-2f661922a14c.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Bash"
   }
 ]
