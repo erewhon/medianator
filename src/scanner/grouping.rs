@@ -1,10 +1,10 @@
 use anyhow::Result;
-use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use chrono::{NaiveDate, Utc};
 use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::db::Database;
-use crate::models::{LocationInfo, MediaFile, MediaGroup};
+use crate::models::{MediaFile, MediaGroup};
 
 const LOCATION_CLUSTER_RADIUS_KM: f64 = 1.0; // 1km radius for location clustering
 

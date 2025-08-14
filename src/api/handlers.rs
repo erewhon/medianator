@@ -379,7 +379,7 @@ async fn extract_face_thumbnail(
     width: i32,
     height: i32,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    use image::{imageops, DynamicImage};
+    use image::imageops;
     
     let img = image::open(image_path)?;
     

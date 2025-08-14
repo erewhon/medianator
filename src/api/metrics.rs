@@ -1,8 +1,6 @@
 use axum::{
-    body::Body,
     extract::Request,
     http::StatusCode,
-    middleware::Next,
     response::{IntoResponse, Response},
 };
 use prometheus::{Encoder, Histogram, IntCounter, IntCounterVec, TextEncoder};

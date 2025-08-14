@@ -3,10 +3,9 @@ mod groups_albums;
 
 use anyhow::Result;
 use sqlx::{migrate::MigrateDatabase, Pool, Sqlite, SqlitePool};
-use std::path::Path;
 use tracing::info;
 
-use crate::models::{MediaFile, MediaMetadata, ScanHistory, Face, FaceGroup, Duplicate};
+use crate::models::{MediaFile, MediaMetadata, ScanHistory, Face, FaceGroup};
 
 #[derive(Clone)]
 pub struct Database {

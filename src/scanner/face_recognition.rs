@@ -5,6 +5,7 @@ use image::DynamicImage;
 
 use crate::models::Face;
 
+#[allow(dead_code)]
 const CONFIDENCE_THRESHOLD: f64 = 0.7;
 const SIMILARITY_THRESHOLD: f32 = 0.6;
 const MIN_FACE_SIZE: u32 = 40; // Increased for better accuracy

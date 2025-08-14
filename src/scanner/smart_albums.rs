@@ -4,7 +4,7 @@ use serde_json;
 use uuid::Uuid;
 
 use crate::db::Database;
-use crate::models::{MediaFile, SmartAlbum, SmartAlbumFilter, DateRange, LocationRadius};
+use crate::models::{MediaFile, SmartAlbum, SmartAlbumFilter, DateRange};
 
 pub struct SmartAlbumManager {
     db: Database,
@@ -301,7 +301,7 @@ impl SmartAlbumManager {
         let mut suggestions = Vec::new();
 
         // Analyze the media library to suggest relevant smart albums
-        let stats = self.db.get_media_statistics().await?;
+        let _stats = self.db.get_media_statistics().await?;
 
         // Suggest by camera makes if there are multiple
         let camera_makes = self.db.get_unique_camera_makes().await?;

@@ -1,7 +1,6 @@
 use anyhow::Result;
 use sqlx::{Pool, Sqlite};
-use std::collections::HashMap;
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::models::{DuplicateGroup, DuplicateFile, MediaFile};
 

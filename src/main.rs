@@ -38,31 +38,46 @@ async fn main() -> Result<()> {
     
     // Enable sub-image extraction if configured
     if let Ok(sub_images_dir) = std::env::var("SUB_IMAGES_DIR") {
-        scanner = scanner.with_sub_image_extraction(std::path::PathBuf::from(sub_images_dir));
-        info!("Sub-image extraction enabled");
+        // Check if OpenCV should be used for sub-image extraction
+        let use_opencv_for_subimages = std::env::var("USE_OPENCV_COLLAGE")
+            .unwrap_or_else(|_| "false".to_string()) == "true";
+        
+        scanner = scanner.with_sub_image_extraction(
+            std::path::PathBuf::from(sub_images_dir),
+            use_opencv_for_subimages
+        );
+        info!("Sub-image extraction enabled (OpenCV: {})", use_opencv_for_subimages);
     }
     
     // Enable face detection if configured
     if std::env::var("ENABLE_FACE_DETECTION").unwrap_or_default() == "true" {
-        // Check if OpenCV should be used (default to true)
-        let use_opencv = std::env::var("USE_OPENCV")
-            .unwrap_or_else(|_| "true".to_string()) == "true";
+        // Get the detector type from environment variable
+        // Options: "viola-jones" (default), "opencv-python", "opencv-rust"
+        let detector_type = std::env::var("FACE_DETECTOR_TYPE")
+            .unwrap_or_else(|_| "viola-jones".to_string());
         
-        scanner = match scanner.with_face_detection(use_opencv) {
+        scanner = match scanner.with_face_detection(Some(&detector_type)) {
             Ok(s) => {
-                info!("Face detection enabled (OpenCV: {})", use_opencv);
+                info!("Face detection enabled (type: {})", detector_type);
                 s
             }
             Err(e) => {
                 warn!("Failed to enable face detection: {}", e);
                 // Create a new scanner since the old one was consumed
-                MediaScanner::new(db.clone())
+                let mut fallback_scanner = MediaScanner::new(db.clone())
                     .with_thumbnail_generator(std::path::PathBuf::from(
                         std::env::var("THUMBNAILS_DIR").unwrap_or_default()
-                    ))
-                    .with_sub_image_extraction(std::path::PathBuf::from(
-                        std::env::var("SUB_IMAGES_DIR").unwrap_or_default()
-                    ))
+                    ));
+                
+                if let Ok(sub_images_dir) = std::env::var("SUB_IMAGES_DIR") {
+                    let use_opencv = std::env::var("USE_OPENCV_COLLAGE")
+                        .unwrap_or_else(|_| "false".to_string()) == "true";
+                    fallback_scanner = fallback_scanner.with_sub_image_extraction(
+                        std::path::PathBuf::from(sub_images_dir),
+                        use_opencv
+                    );
+                }
+                fallback_scanner
             }
         };
     }

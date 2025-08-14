@@ -4,6 +4,8 @@ pub mod face_recognition;
 pub mod duplicate;
 pub mod viola_jones_detector;
 pub mod opencv_face_detector;
+pub mod opencv_rust_detector;
+pub mod opencv_collage_detector;
 pub mod sub_image_extractor;
 pub mod grouping;
 pub mod smart_albums;
@@ -16,23 +18,26 @@ use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
 
 use crate::db::Database;
-use crate::models::{MediaMetadata, ScanProgress};
+use crate::models::MediaMetadata;
 use metadata::MetadataExtractor;
 use thumbnail::ThumbnailGenerator;
 use viola_jones_detector::ViolaJonesFaceDetector;
 use opencv_face_detector::OpenCVFaceDetector;
-use sub_image_extractor::{SubImageExtractor, ExtractionMetadata};
+use opencv_rust_detector::OpenCVRustDetector;
+use sub_image_extractor::SubImageExtractor;
 
 pub enum FaceDetectorType {
     ViolaJones(ViolaJonesFaceDetector),
-    OpenCV(OpenCVFaceDetector),
+    OpenCVPython(OpenCVFaceDetector),
+    OpenCVRust(OpenCVRustDetector),
 }
 
 impl FaceDetectorType {
     pub async fn detect_faces(&self, image_path: &Path, media_id: &str) -> Result<Vec<crate::models::Face>> {
         match self {
             FaceDetectorType::ViolaJones(detector) => detector.detect_faces(image_path, media_id).await,
-            FaceDetectorType::OpenCV(detector) => detector.detect_faces(image_path, media_id).await,
+            FaceDetectorType::OpenCVPython(detector) => detector.detect_faces(image_path, media_id).await,
+            FaceDetectorType::OpenCVRust(detector) => detector.detect_faces(image_path, media_id).await,
         }
     }
 }
@@ -61,28 +66,50 @@ impl MediaScanner {
         self
     }
 
-    pub fn with_face_detection(mut self, use_opencv: bool) -> Result<Self> {
-        if use_opencv {
-            // Try OpenCV first
-            match OpenCVFaceDetector::new() {
-                Ok(detector) => {
-                    info!("Using OpenCV face detector");
-                    self.face_detector = Some(FaceDetectorType::OpenCV(detector));
-                }
-                Err(e) => {
-                    warn!("Failed to initialize OpenCV detector: {}, falling back to Viola-Jones", e);
-                    self.face_detector = Some(FaceDetectorType::ViolaJones(ViolaJonesFaceDetector::new()?));
+    pub fn with_face_detection(mut self, detector_type: Option<&str>) -> Result<Self> {
+        match detector_type {
+            Some("opencv-rust") => {
+                // Try OpenCV Rust first
+                match OpenCVRustDetector::new() {
+                    Ok(detector) => {
+                        info!("Using OpenCV Rust face detector");
+                        self.face_detector = Some(FaceDetectorType::OpenCVRust(detector));
+                    }
+                    Err(e) => {
+                        warn!("Failed to initialize OpenCV Rust detector: {}, falling back to Viola-Jones", e);
+                        self.face_detector = Some(FaceDetectorType::ViolaJones(ViolaJonesFaceDetector::new()?));
+                    }
                 }
             }
-        } else {
-            self.face_detector = Some(FaceDetectorType::ViolaJones(ViolaJonesFaceDetector::new()?));
+            Some("opencv-python") | Some("opencv") => {
+                // Try OpenCV Python
+                match OpenCVFaceDetector::new() {
+                    Ok(detector) => {
+                        info!("Using OpenCV Python face detector");
+                        self.face_detector = Some(FaceDetectorType::OpenCVPython(detector));
+                    }
+                    Err(e) => {
+                        warn!("Failed to initialize OpenCV Python detector: {}, falling back to Viola-Jones", e);
+                        self.face_detector = Some(FaceDetectorType::ViolaJones(ViolaJonesFaceDetector::new()?));
+                    }
+                }
+            }
+            _ => {
+                // Default to Viola-Jones
+                self.face_detector = Some(FaceDetectorType::ViolaJones(ViolaJonesFaceDetector::new()?));
+            }
         }
         Ok(self)
     }
 
-    pub fn with_sub_image_extraction(mut self, output_dir: PathBuf) -> Self {
+    pub fn with_sub_image_extraction(mut self, output_dir: PathBuf, use_opencv: bool) -> Self {
         std::fs::create_dir_all(&output_dir).ok();
-        self.sub_image_extractor = Some(SubImageExtractor::new());
+        let extractor = if use_opencv {
+            SubImageExtractor::new().with_opencv()
+        } else {
+            SubImageExtractor::new()
+        };
+        self.sub_image_extractor = Some(extractor);
         self.sub_image_output_dir = Some(output_dir);
         self
     }

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use image::{DynamicImage, GenericImageView};
+use image::DynamicImage;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
@@ -29,6 +29,7 @@ pub struct SubImageExtractor {
     edge_threshold: f32,
     min_aspect_ratio: f32,
     max_aspect_ratio: f32,
+    use_opencv_detector: bool,
 }
 
 impl SubImageExtractor {
@@ -38,7 +39,13 @@ impl SubImageExtractor {
             edge_threshold: 30.0,
             min_aspect_ratio: 0.3,
             max_aspect_ratio: 3.0,
+            use_opencv_detector: false,
         }
+    }
+    
+    pub fn with_opencv(mut self) -> Self {
+        self.use_opencv_detector = true;
+        self
     }
 
     pub async fn extract_sub_images(
@@ -46,10 +53,36 @@ impl SubImageExtractor {
         image_path: &Path,
         output_dir: &Path,
     ) -> Result<Vec<(PathBuf, ExtractionMetadata)>> {
+        // Try OpenCV detector first if available
+        let regions = if self.use_opencv_detector {
+            info!("Attempting OpenCV collage detection for: {}", image_path.display());
+            match self.detect_with_opencv(image_path).await {
+                Ok(opencv_regions) if !opencv_regions.is_empty() => {
+                    info!("OpenCV detector found {} sub-images in {}", opencv_regions.len(), image_path.display());
+                    opencv_regions
+                }
+                Ok(_) => {
+                    info!("OpenCV detector found no sub-images, falling back to standard detection");
+                    let img = image::open(image_path)
+                        .with_context(|| format!("Failed to open image: {}", image_path.display()))?;
+                    self.detect_sub_images(&img)?
+                }
+                Err(e) => {
+                    info!("OpenCV detection failed: {}, falling back to standard detection", e);
+                    let img = image::open(image_path)
+                        .with_context(|| format!("Failed to open image: {}", image_path.display()))?;
+                    self.detect_sub_images(&img)?
+                }
+            }
+        } else {
+            debug!("Using standard edge detection for sub-images");
+            let img = image::open(image_path)
+                .with_context(|| format!("Failed to open image: {}", image_path.display()))?;
+            self.detect_sub_images(&img)?
+        };
+        
         let img = image::open(image_path)
             .with_context(|| format!("Failed to open image: {}", image_path.display()))?;
-
-        let regions = self.detect_sub_images(&img)?;
         
         if regions.is_empty() {
             debug!("No sub-images detected in {}", image_path.display());
@@ -75,7 +108,11 @@ impl SubImageExtractor {
             
             let metadata = ExtractionMetadata {
                 source_region: region.clone(),
-                extraction_method: "edge_detection".to_string(),
+                extraction_method: if self.use_opencv_detector { 
+                    "opencv_collage".to_string() 
+                } else { 
+                    "edge_detection".to_string() 
+                },
                 extraction_timestamp: chrono::Utc::now(),
             };
             
@@ -320,5 +357,26 @@ impl SubImageExtractor {
     fn extract_region(&self, img: &DynamicImage, region: &SubImageRegion) -> Result<DynamicImage> {
         let sub_image = img.crop_imm(region.x, region.y, region.width, region.height);
         Ok(sub_image)
+    }
+    
+    #[cfg(feature = "opencv-face")]
+    async fn detect_with_opencv(&self, image_path: &Path) -> Result<Vec<SubImageRegion>> {
+        use crate::scanner::opencv_collage_detector::OpenCVCollageDetector;
+        
+        let detector = OpenCVCollageDetector::new()?;
+        let photos = detector.detect_photos(image_path).await?;
+        
+        let regions: Vec<SubImageRegion> = photos
+            .into_iter()
+            .map(|photo| photo.to_extraction_region())
+            .collect();
+        
+        Ok(regions)
+    }
+    
+    #[cfg(not(feature = "opencv-face"))]
+    async fn detect_with_opencv(&self, _image_path: &Path) -> Result<Vec<SubImageRegion>> {
+        // OpenCV not available, return empty
+        Ok(Vec::new())
     }
 }

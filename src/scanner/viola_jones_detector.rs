@@ -34,6 +34,7 @@ enum FeatureType {
     TwoRectangleHorizontal,  // Edge features
     TwoRectangleVertical,
     ThreeRectangleHorizontal, // Line features
+    #[allow(dead_code)]
     ThreeRectangleVertical,
     FourRectangle,            // Diagonal features
 }

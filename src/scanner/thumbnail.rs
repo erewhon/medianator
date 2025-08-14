@@ -5,6 +5,7 @@ use tokio::fs;
 use tracing::{debug, error, info};
 
 const THUMBNAIL_SIZE: u32 = 256;
+#[allow(dead_code)]
 const THUMBNAIL_QUALITY: u8 = 85;
 
 pub struct ThumbnailGenerator {

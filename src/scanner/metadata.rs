@@ -124,7 +124,7 @@ impl MetadataExtractor {
     }
 
     pub fn extract_exif_data(path: &Path) -> Result<(CameraInfo, Option<LocationInfo>, Option<DateTime<Utc>>)> {
-        use exif::{Exif, Tag, Reader, In, Value};
+        use exif::{Tag, Reader, In, Value};
         
         let file = File::open(path)?;
         let mut reader = std::io::BufReader::new(file);
@@ -273,7 +273,7 @@ impl MetadataExtractor {
     }
 
     fn extract_video_metadata(
-        path: &Path,
+        _path: &Path,
     ) -> Result<(Option<Dimensions>, Option<CodecInfo>, Option<f64>)> {
         let dimensions = None;
         let codec_info = Some(CodecInfo {
