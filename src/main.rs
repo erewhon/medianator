@@ -38,9 +38,13 @@ async fn main() -> Result<()> {
     
     // Enable face detection if configured
     if std::env::var("ENABLE_FACE_DETECTION").unwrap_or_default() == "true" {
-        scanner = match scanner.with_face_detection() {
+        // Check if OpenCV should be used (default to true)
+        let use_opencv = std::env::var("USE_OPENCV")
+            .unwrap_or_else(|_| "true".to_string()) == "true";
+        
+        scanner = match scanner.with_face_detection(use_opencv) {
             Ok(s) => {
-                info!("Face detection enabled");
+                info!("Face detection enabled (OpenCV: {})", use_opencv);
                 s
             }
             Err(e) => {

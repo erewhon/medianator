@@ -29,6 +29,9 @@ mp4 = "0.14"
 imageproc = "0.25"
 ndarray = "0.16"
 
+# For downloading model files and HTTP requests
+ureq = "2.10"
+
 # File handling
 walkdir = "2.5"
 mime_guess = "2.0"

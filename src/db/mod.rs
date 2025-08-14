@@ -1,3 +1,5 @@
+mod face_grouping;
+
 use anyhow::Result;
 use sqlx::{migrate::MigrateDatabase, Pool, Sqlite, SqlitePool};
 use std::path::Path;
@@ -311,8 +313,8 @@ impl Database {
         
         sqlx::query(
             r#"
-            INSERT INTO face_groups (id, group_name)
-            VALUES (?1, ?2)
+            INSERT INTO face_groups (id, group_name, face_count, created_at, updated_at)
+            VALUES (?1, ?2, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             "#)
         .bind(&group_id)
         .bind(group_name)

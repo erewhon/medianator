@@ -443,9 +443,17 @@ pub async fn reprocess_media(
                 match detector.detect_faces(std::path::Path::new(&file_path), &media_id).await {
                     Ok(faces) => {
                         tracing::info!("Detected {} faces in reprocessed image", faces.len());
+                        let face_count = faces.len();
                         for face in faces {
                             if let Err(e) = db.insert_face(&face).await {
                                 tracing::error!("Failed to insert face: {}", e);
+                            }
+                        }
+                        
+                        // Auto-group faces after insertion
+                        if face_count > 0 {
+                            if let Err(e) = db.auto_group_faces().await {
+                                tracing::warn!("Failed to auto-group faces: {}", e);
                             }
                         }
                     }
@@ -539,9 +547,17 @@ pub async fn batch_reprocess(
                     // Detect new faces
                     match detector.detect_faces(file_path, &media_id).await {
                         Ok(faces) => {
+                            let face_count = faces.len();
                             for face in faces {
                                 if let Err(e) = db.insert_face(&face).await {
                                     tracing::error!("Failed to insert face: {}", e);
+                                }
+                            }
+                            
+                            // Auto-group faces after insertion
+                            if face_count > 0 {
+                                if let Err(e) = db.auto_group_faces().await {
+                                    tracing::warn!("Failed to auto-group faces: {}", e);
                                 }
                             }
                         }

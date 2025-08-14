@@ -3,6 +3,7 @@ pub mod thumbnail;
 pub mod face_recognition;
 pub mod duplicate;
 pub mod viola_jones_detector;
+pub mod opencv_face_detector;
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
@@ -16,11 +17,26 @@ use crate::models::{MediaMetadata, ScanProgress};
 use metadata::MetadataExtractor;
 use thumbnail::ThumbnailGenerator;
 use viola_jones_detector::ViolaJonesFaceDetector;
+use opencv_face_detector::OpenCVFaceDetector;
+
+pub enum FaceDetectorType {
+    ViolaJones(ViolaJonesFaceDetector),
+    OpenCV(OpenCVFaceDetector),
+}
+
+impl FaceDetectorType {
+    pub async fn detect_faces(&self, image_path: &Path, media_id: &str) -> Result<Vec<crate::models::Face>> {
+        match self {
+            FaceDetectorType::ViolaJones(detector) => detector.detect_faces(image_path, media_id).await,
+            FaceDetectorType::OpenCV(detector) => detector.detect_faces(image_path, media_id).await,
+        }
+    }
+}
 
 pub struct MediaScanner {
     db: Database,
     pub thumbnail_generator: Option<ThumbnailGenerator>,
-    pub face_detector: Option<ViolaJonesFaceDetector>,
+    pub face_detector: Option<FaceDetectorType>,
 }
 
 impl MediaScanner {
@@ -37,8 +53,22 @@ impl MediaScanner {
         self
     }
 
-    pub fn with_face_detection(mut self) -> Result<Self> {
-        self.face_detector = Some(ViolaJonesFaceDetector::new()?);
+    pub fn with_face_detection(mut self, use_opencv: bool) -> Result<Self> {
+        if use_opencv {
+            // Try OpenCV first
+            match OpenCVFaceDetector::new() {
+                Ok(detector) => {
+                    info!("Using OpenCV face detector");
+                    self.face_detector = Some(FaceDetectorType::OpenCV(detector));
+                }
+                Err(e) => {
+                    warn!("Failed to initialize OpenCV detector: {}, falling back to Viola-Jones", e);
+                    self.face_detector = Some(FaceDetectorType::ViolaJones(ViolaJonesFaceDetector::new()?));
+                }
+            }
+        } else {
+            self.face_detector = Some(FaceDetectorType::ViolaJones(ViolaJonesFaceDetector::new()?));
+        }
         Ok(self)
     }
 
@@ -130,9 +160,17 @@ impl MediaScanner {
                             if metadata.media_type == crate::models::MediaType::Image {
                                 match detector.detect_faces(Path::new(&metadata.file_path), &metadata.id).await {
                                     Ok(faces) => {
+                                        let face_count = faces.len();
                                         for face in faces {
                                             if let Err(e) = self.db.insert_face(&face).await {
                                                 warn!("Failed to insert face: {}", e);
+                                            }
+                                        }
+                                        
+                                        // Auto-group faces after insertion
+                                        if face_count > 0 {
+                                            if let Err(e) = self.db.auto_group_faces().await {
+                                                warn!("Failed to auto-group faces: {}", e);
                                             }
                                         }
                                     }
