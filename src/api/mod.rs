@@ -1,5 +1,6 @@
 pub mod handlers;
 pub mod metrics;
+pub mod websocket;
 
 use axum::{
     routing::{get, post, put, delete},
@@ -30,6 +31,7 @@ pub fn create_app(db: Database, scanner: MediaScanner) -> Router {
 
     Router::new()
         .route("/health", get(handlers::health_check))
+        .route("/ws", get(websocket::websocket_handler))
         .route("/api/media", get(handlers::list_media))
         .route("/api/media/search", get(handlers::search_media))
         .route("/api/media/:id", get(handlers::get_media_by_id))
@@ -75,6 +77,11 @@ pub fn create_app(db: Database, scanner: MediaScanner) -> Router {
         .route("/api/stories/:id", delete(handlers::delete_story))
         .route("/api/stories/:id/items", post(handlers::add_story_item))
         .route("/api/stories/:story_id/items/:media_id", delete(handlers::remove_story_item))
+        // Transcription endpoints
+        .route("/api/transcribe", post(handlers::transcribe_media))
+        .route("/api/transcriptions/media/:media_id", get(handlers::get_transcription))
+        .route("/api/transcriptions/:id", delete(handlers::delete_transcription))
+        .route("/api/transcriptions/search", get(handlers::search_transcriptions))
         .route("/metrics", get(metrics::metrics_handler))
         .fallback_service(ServeDir::new("static").append_index_html_on_directories(true))
         .layer(MetricsMiddleware::new())

@@ -12,7 +12,7 @@ use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
 use crate::db::{Database, StoryDatabase};
-use crate::models::{MediaFile, Face, FaceGroup, DuplicateGroup, MediaGroup, MediaGroupWithItems, SmartAlbum, SmartAlbumFilter};
+use crate::models::{MediaFile, Face, FaceGroup, DuplicateGroup, MediaGroup, MediaGroupWithItems, SmartAlbum, SmartAlbumFilter, Transcription, TranscriptionRequest, TranscriptionResponse, TranscriptionSegment};
 use crate::scanner::{MediaScanner, ScanStats, duplicate::DuplicateDetector};
 
 pub struct AppState {
@@ -1399,6 +1399,809 @@ pub async fn create_default_smart_albums(
         Ok(albums) => Ok(Json(ApiResponse::success(albums))),
         Err(e) => {
             tracing::error!("Failed to create default smart albums: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// Helper function to find the best way to run a command (pipx, uvx, or direct)
+fn find_command_runner(tool_name: &str, run_method: &str) -> Option<(String, Vec<String>)> {
+    use std::process::Command;
+    
+    // First, check if the tool is directly available in PATH
+    let direct_check = Command::new("which")
+        .arg(tool_name)
+        .output();
+    
+    let is_in_path = direct_check.is_ok() && direct_check.unwrap().status.success();
+    
+    // If run_method is specified and not "auto", try that first (but respect PATH priority)
+    match run_method {
+        "pipx" => {
+            // If it's already in PATH directly, prefer that to avoid conflicts
+            if is_in_path {
+                tracing::info!("{} is already in PATH, using direct execution instead of pipx to avoid conflicts", tool_name);
+                return Some((tool_name.to_string(), vec![]));
+            }
+            
+            // Check if tool is available via pipx
+            let check = Command::new("pipx")
+                .args(&["list"])
+                .output();
+            
+            if let Ok(output) = check {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if stdout.contains(tool_name) || stdout.contains(&tool_name.replace("whisperx", "whisperx")) {
+                    // Try to get Python version info for logging
+                    if let Ok(version_check) = Command::new("pipx")
+                        .args(&["runpip", tool_name, "--version"])
+                        .output() {
+                        let version_info = String::from_utf8_lossy(&version_check.stdout);
+                        if version_info.contains("python 3.12") || version_info.contains("Python 3.12") {
+                            tracing::debug!("pipx package {} using Python 3.12", tool_name);
+                        } else {
+                            tracing::warn!("pipx package {} may not be using Python 3.12: {}", tool_name, version_info);
+                        }
+                    }
+                    return Some(("pipx".to_string(), vec!["run".to_string(), tool_name.to_string()]));
+                }
+            }
+        }
+        "uvx" => {
+            // If it's already in PATH directly, prefer that to avoid conflicts
+            if is_in_path {
+                tracing::info!("{} is already in PATH, using direct execution instead of uvx", tool_name);
+                return Some((tool_name.to_string(), vec![]));
+            }
+            
+            // Check if uvx is available
+            let check = Command::new("which")
+                .arg("uvx")
+                .output();
+            
+            if check.is_ok() && check.unwrap().status.success() {
+                return Some(("uvx".to_string(), vec![tool_name.to_string()]));
+            }
+        }
+        "direct" => {
+            // Try direct execution
+            if is_in_path {
+                return Some((tool_name.to_string(), vec![]));
+            }
+        }
+        _ => {} // "auto" or unknown - try all methods
+    }
+    
+    // Auto mode: try in order - direct (preferred), pipx, uvx
+    
+    // 1. Try direct execution (already checked above)
+    if is_in_path {
+        tracing::debug!("{} found directly in PATH", tool_name);
+        return Some((tool_name.to_string(), vec![]));
+    }
+    
+    // 2. Try pipx (only if not in PATH to avoid conflicts)
+    let check = Command::new("pipx")
+        .args(&["list"])
+        .output();
+    
+    if let Ok(output) = check {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // Check for both exact match and common variations
+        let variations = [
+            tool_name,
+            &tool_name.replace("whisper", "openai-whisper"),
+            "whisperx",
+            "openai-whisper",
+        ];
+        
+        for variant in variations {
+            if stdout.contains(variant) {
+                // Try to get Python version info for logging
+                if let Ok(version_check) = Command::new("pipx")
+                    .args(&["runpip", tool_name, "--version"])
+                    .output() {
+                    let version_info = String::from_utf8_lossy(&version_check.stdout);
+                    if version_info.contains("python 3.12") || version_info.contains("Python 3.12") {
+                        tracing::debug!("Auto-detected pipx package {} using Python 3.12", tool_name);
+                    } else {
+                        tracing::warn!("Auto-detected pipx package {} may not be using Python 3.12. Consider reinstalling with: pipx reinstall --python python3.12 {}", tool_name, tool_name);
+                    }
+                }
+                return Some(("pipx".to_string(), vec!["run".to_string(), tool_name.to_string()]));
+            }
+        }
+    }
+    
+    // 3. Try uvx
+    let check = Command::new("which")
+        .arg("uvx")
+        .output();
+    
+    if check.is_ok() && check.unwrap().status.success() {
+        // uvx might work even if we can't verify the package
+        return Some(("uvx".to_string(), vec![tool_name.to_string()]));
+    }
+    
+    None
+}
+
+// Helper function to extract progress percentage from WhisperX output
+fn extract_progress_percentage(line: &str) -> Option<f32> {
+    // Look for patterns like "50%" or "50.0%" or "[50%]"
+    if let Some(pos) = line.find('%') {
+        // Find the start of the number before the %
+        let start = line[..pos]
+            .rfind(|c: char| !c.is_numeric() && c != '.')
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        
+        if let Ok(percent) = line[start..pos].parse::<f32>() {
+            return Some(percent);
+        }
+    }
+    
+    // Look for patterns like "Progress: 0.5" (where 0.5 = 50%)
+    if line.contains("Progress:") || line.contains("progress:") {
+        if let Some(pos) = line.rfind(':') {
+            if let Ok(fraction) = line[pos+1..].trim().parse::<f32>() {
+                return Some(fraction * 100.0);
+            }
+        }
+    }
+    
+    None
+}
+
+pub async fn transcribe_media(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<TranscriptionRequest>,
+) -> Result<Json<ApiResponse<TranscriptionResponse>>, StatusCode> {
+    use std::process::{Command, Stdio};
+    use std::io::{BufReader, BufRead};
+    use crate::api::websocket::{broadcast_transcription_progress, broadcast_transcription_segment, TranscriptionSegmentUpdate};
+    
+    let media_id = request.media_file_id.clone();
+    
+    // Determine which transcription engine to use (default to WhisperX if available)
+    let use_whisperx = std::env::var("TRANSCRIPTION_ENGINE")
+        .unwrap_or_else(|_| "whisperx".to_string())
+        .to_lowercase() == "whisperx";
+    
+    // Determine run method (pipx, uvx, or direct)
+    let run_method = std::env::var("WHISPER_RUN_METHOD")
+        .unwrap_or_else(|_| "auto".to_string())
+        .to_lowercase();
+    
+    // Log start of transcription
+    let engine = if use_whisperx { "WhisperX" } else { "Whisper" };
+    tracing::info!("Starting transcription with {} for media_id: {} (run method: {})", engine, media_id, run_method);
+    broadcast_transcription_progress(&media_id, "starting", 0.0, Some(format!("Initializing {} transcription...", engine)));
+    
+    // Get media file
+    let media = match state.db.get_media_by_id(&media_id).await {
+        Ok(Some(m)) => m,
+        Ok(None) => {
+            tracing::warn!("Media not found: {}", media_id);
+            broadcast_transcription_progress(&media_id, "error", 0.0, Some("Media file not found".to_string()));
+            return Err(StatusCode::NOT_FOUND);
+        },
+        Err(e) => {
+            tracing::error!("Failed to get media {}: {}", media_id, e);
+            broadcast_transcription_progress(&media_id, "error", 0.0, Some(format!("Database error: {}", e)));
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    tracing::info!("Found media file: {} (type: {})", media.file_path, media.media_type);
+    
+    // Check if it's audio or video
+    if media.media_type != "audio" && media.media_type != "video" {
+        tracing::warn!("Invalid media type for transcription: {}", media.media_type);
+        broadcast_transcription_progress(&media_id, "error", 0.0, Some("Media type must be audio or video".to_string()));
+        return Ok(Json(ApiResponse::error("Media type must be audio or video".to_string())));
+    }
+    
+    // Check if transcription already exists
+    if let Ok(Some(existing)) = crate::db::get_transcription_by_media(&state.db.get_pool(), &media_id).await {
+        tracing::info!("Transcription already exists for media_id: {}", media_id);
+        broadcast_transcription_progress(&media_id, "complete", 100.0, Some("Using existing transcription".to_string()));
+        
+        let segments: Vec<TranscriptionSegment> = existing.transcription_segments
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_default();
+        
+        return Ok(Json(ApiResponse::success(TranscriptionResponse {
+            transcription: existing,
+            segments,
+        })));
+    }
+    
+    tracing::info!("Preparing {} transcription for: {}", engine, media.file_path);
+    broadcast_transcription_progress(&media_id, "processing", 10.0, Some(format!("Preparing {} model...", engine)));
+    
+    // Check if the transcription tool is installed and determine how to run it
+    let mut use_whisperx = use_whisperx;
+    let command_runner: (String, Vec<String>);
+    
+    if use_whisperx {
+        // Check for WhisperX using the helper function
+        if let Some(runner) = find_command_runner("whisperx", &run_method) {
+            command_runner = runner;
+            tracing::info!("Found WhisperX using runner: {} {:?}", command_runner.0, command_runner.1);
+        } else {
+            tracing::warn!("WhisperX not found, falling back to regular Whisper");
+            broadcast_transcription_progress(&media_id, "processing", 5.0, 
+                Some("WhisperX not found, trying regular Whisper...".to_string()));
+            
+            // Check for regular Whisper as fallback
+            if let Some(runner) = find_command_runner("whisper", &run_method) {
+                command_runner = runner;
+                use_whisperx = false;
+                tracing::info!("Falling back to Whisper using runner: {} {:?}", command_runner.0, command_runner.1);
+            } else {
+                tracing::error!("Neither WhisperX nor Whisper is installed or accessible");
+                broadcast_transcription_progress(&media_id, "error", 0.0, 
+                    Some("Neither WhisperX nor Whisper is installed. Please install one of them.".to_string()));
+                return Ok(Json(ApiResponse::error(
+                    "Transcription tools not installed. Install WhisperX (pipx install whisperx) or Whisper (pipx install openai-whisper)".to_string()
+                )));
+            }
+        }
+    } else {
+        // Check for regular Whisper
+        if let Some(runner) = find_command_runner("whisper", &run_method) {
+            command_runner = runner;
+            tracing::info!("Found Whisper using runner: {} {:?}", command_runner.0, command_runner.1);
+        } else {
+            tracing::error!("Whisper is not installed or accessible");
+            broadcast_transcription_progress(&media_id, "error", 0.0, 
+                Some("Whisper is not installed. Please install it using: pipx install openai-whisper".to_string()));
+            return Ok(Json(ApiResponse::error(
+                "Whisper is not installed. Please install OpenAI Whisper first using: pipx install openai-whisper".to_string()
+            )));
+        }
+    }
+    
+    // Create a temporary directory specifically for Whisper output
+    let temp_dir = tempfile::tempdir().map_err(|e| {
+        tracing::error!("Failed to create temp directory: {}", e);
+        broadcast_transcription_progress(&media_id, "error", 0.0, Some(format!("Failed to create temp directory: {}", e)));
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    
+    tracing::info!("Created temp directory for transcription output: {:?}", temp_dir.path());
+    
+    // Build the command based on which tool we're using
+    let (output, used_engine) = if use_whisperx {
+        // First, do a quick test to ensure WhisperX is working
+        tracing::info!("Testing WhisperX installation...");
+        let test_cmd = Command::new(&command_runner.0)
+            .args(&command_runner.1)
+            .arg("--help")
+            .output();
+        
+        if let Ok(test_output) = test_cmd {
+            if !test_output.status.success() {
+                tracing::error!("WhisperX --help failed, installation may be broken");
+                let help_stderr = String::from_utf8_lossy(&test_output.stderr);
+                if !help_stderr.is_empty() {
+                    tracing::error!("WhisperX --help error: {}", help_stderr);
+                }
+                
+                // Check for common issues
+                if help_stderr.contains("ModuleNotFoundError") || help_stderr.contains("ImportError") {
+                    tracing::error!("WhisperX has missing Python dependencies. Try: pipx inject whisperx torch torchaudio transformers");
+                    broadcast_transcription_progress(&media_id, "error", 0.0, 
+                        Some("WhisperX has missing dependencies. Please reinstall or use regular Whisper.".to_string()));
+                    
+                    // Try to fall back to regular Whisper
+                    if let Some(_runner) = find_command_runner("whisper", &run_method) {
+                        tracing::warn!("Falling back to regular Whisper due to WhisperX issues");
+                        broadcast_transcription_progress(&media_id, "processing", 10.0, 
+                            Some("WhisperX unavailable, using regular Whisper...".to_string()));
+                        // Note: We can't easily fall back here since command_runner is immutable
+                        // The user should set TRANSCRIPTION_ENGINE=whisper instead
+                    }
+                }
+            } else {
+                tracing::debug!("WhisperX --help succeeded, installation appears OK");
+            }
+        }
+        
+        // WhisperX command with streaming progress
+        let mut cmd = Command::new(&command_runner.0);
+        
+        // Add any prefix arguments (like "run" for pipx)
+        for arg in &command_runner.1 {
+            cmd.arg(arg);
+        }
+        
+        cmd.arg(&media.file_path)
+           .arg("--model").arg("base")
+           .arg("--output_format").arg("json")
+           .arg("--output_dir").arg(temp_dir.path())
+           .arg("--compute_type").arg("int8")  // Faster computation
+           .arg("--print_progress").arg("True")  // Enable progress output
+           .stderr(Stdio::piped())  // Capture stderr for progress
+           .stdout(Stdio::piped());
+        
+        if let Some(lang) = &request.language {
+            tracing::info!("Using language: {}", lang);
+            cmd.arg("--language").arg(lang);
+        }
+        // Note: WhisperX doesn't have an "auto" option - if no language is specified,
+        // we simply don't pass the --language flag and it will auto-detect
+        
+        // WhisperX supports speaker diarization (requires HuggingFace token)
+        if request.enable_speaker_diarization {
+            // Check if HuggingFace token is available
+            let hf_token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HUGGING_FACE_TOKEN"));
+            
+            if hf_token.is_ok() {
+                tracing::info!("Enabling speaker diarization with WhisperX");
+                cmd.arg("--diarize");
+                cmd.arg("--min_speakers").arg("1");
+                cmd.arg("--max_speakers").arg("10");
+                cmd.arg("--hf_token").arg(hf_token.unwrap());
+                broadcast_transcription_progress(&media_id, "processing", 15.0, 
+                    Some("Speaker diarization enabled".to_string()));
+            } else {
+                tracing::warn!("Speaker diarization requested but HF_TOKEN not set. Skipping diarization.");
+                tracing::warn!("To enable speaker diarization, set HF_TOKEN environment variable with your HuggingFace token");
+                broadcast_transcription_progress(&media_id, "processing", 15.0, 
+                    Some("Diarization skipped (HF_TOKEN not set)".to_string()));
+            }
+        }
+        
+        tracing::info!("Executing WhisperX command with progress tracking...");
+        broadcast_transcription_progress(&media_id, "processing", 20.0, Some("Running WhisperX transcription...".to_string()));
+        
+        // Log the full command for debugging
+        tracing::info!("WhisperX command: {:?}", cmd);
+        
+        // Spawn the process to capture streaming output
+        let mut child = cmd.spawn().map_err(|e| {
+            tracing::error!("Failed to spawn whisperx: {}. Make sure WhisperX is installed and accessible.", e);
+            
+            // Try to provide more helpful error message
+            let help_msg = if e.kind() == std::io::ErrorKind::NotFound {
+                "WhisperX executable not found. Install with: pipx install --python python3.12 whisperx"
+            } else {
+                "Failed to run WhisperX. Check installation and permissions."
+            };
+            
+            broadcast_transcription_progress(&media_id, "error", 0.0, Some(help_msg.to_string()));
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        
+        // Collect both stderr and stdout for better debugging
+        let stderr = child.stderr.take();
+        let stdout = child.stdout.take();
+        
+        // Read stderr for progress updates and errors
+        let mut stderr_lines = Vec::new();
+        if let Some(stderr) = stderr {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    stderr_lines.push(line.clone());
+                    tracing::debug!("WhisperX stderr: {}", line);
+                    
+                    // Parse WhisperX progress output
+                    if line.contains("Transcribing") || line.contains("Processing") || line.contains("%") {
+                        // Try to extract percentage from the line
+                        if let Some(percent) = extract_progress_percentage(&line) {
+                            broadcast_transcription_progress(&media_id, "processing", 
+                                20.0 + (percent * 0.5), // Map to 20-70% range
+                                Some(format!("Processing: {}%", (percent as i32))));
+                        } else {
+                            broadcast_transcription_progress(&media_id, "processing", 40.0, 
+                                Some(line.clone()));
+                        }
+                    }
+                    
+                    // Check for common error patterns
+                    if line.contains("error") || line.contains("Error") || line.contains("ERROR") {
+                        tracing::error!("WhisperX error detected: {}", line);
+                        
+                        // Detect specific error patterns and provide helpful guidance
+                        if line.contains("CUDA out of memory") || line.contains("OutOfMemoryError") {
+                            broadcast_transcription_progress(&media_id, "error", 0.0, 
+                                Some("Out of memory. Try using a smaller model or CPU processing.".to_string()));
+                        } else if line.contains("ModuleNotFoundError") || line.contains("ImportError") {
+                            broadcast_transcription_progress(&media_id, "warning", 0.0, 
+                                Some("Missing Python dependencies detected. Continuing...".to_string()));
+                        } else if line.contains("ffmpeg") || line.contains("FFmpeg") {
+                            broadcast_transcription_progress(&media_id, "warning", 0.0, 
+                                Some("FFmpeg issue detected. Check ffmpeg installation.".to_string()));
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Read stdout for any output
+        let mut stdout_lines = Vec::new();
+        if let Some(stdout) = stdout {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    stdout_lines.push(line.clone());
+                    tracing::debug!("WhisperX stdout: {}", line);
+                }
+            }
+        }
+        
+        // Wait for the process to complete
+        let output = child.wait_with_output().map_err(|e| {
+            tracing::error!("Failed to wait for whisperx: {}", e);
+            broadcast_transcription_progress(&media_id, "error", 0.0, Some(format!("WhisperX process failed: {}", e)));
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        
+        // If the process failed but stderr was empty, provide diagnostic info
+        if !output.status.success() && stderr_lines.is_empty() && stdout_lines.is_empty() {
+            let exit_code = output.status.code().unwrap_or(-1);
+            tracing::error!("WhisperX failed with exit code {} but no error output", exit_code);
+            tracing::error!("This may indicate WhisperX is not properly installed or is missing dependencies");
+            
+            // Try to run a diagnostic command to get more info
+            tracing::info!("Running WhisperX diagnostics...");
+            
+            // Try to get version info
+            if let Ok(version_check) = Command::new(&command_runner.0)
+                .args(&command_runner.1)
+                .arg("--version")
+                .output() {
+                if version_check.status.success() {
+                    let version_out = String::from_utf8_lossy(&version_check.stdout);
+                    let version_err = String::from_utf8_lossy(&version_check.stderr);
+                    tracing::info!("WhisperX version output: {}", version_out);
+                    if !version_err.is_empty() {
+                        tracing::info!("WhisperX version stderr: {}", version_err);
+                    }
+                } else {
+                    tracing::error!("WhisperX --version failed");
+                }
+            }
+            
+            // Try to run with minimal arguments
+            if let Ok(minimal_test) = Command::new(&command_runner.0)
+                .args(&command_runner.1)
+                .arg("--help")
+                .output() {
+                if !minimal_test.status.success() {
+                    let help_err = String::from_utf8_lossy(&minimal_test.stderr);
+                    tracing::error!("WhisperX --help also failed. Installation appears to be broken.");
+                    if !help_err.is_empty() {
+                        tracing::error!("Help error: {}", help_err);
+                    }
+                    tracing::error!("Reinstall with: pipx reinstall --python python3.12 whisperx");
+                    
+                    // Check for common Python issues
+                    if help_err.contains("ModuleNotFoundError") {
+                        tracing::error!("Missing Python modules detected. Try: pipx inject whisperx torch torchaudio transformers");
+                    }
+                } else {
+                    // Help works but actual command failed - likely an issue with the media file or parameters
+                    tracing::error!("WhisperX --help works but transcription failed. This may be an issue with:");
+                    tracing::error!("1. The media file format or path");
+                    tracing::error!("2. Missing audio codecs");
+                    tracing::error!("3. Insufficient memory or disk space");
+                    tracing::error!("4. File permissions");
+                    
+                    // Log the file path for debugging
+                    tracing::error!("Media file path: {}", media.file_path);
+                    
+                    // Check if file exists and is readable
+                    if let Ok(metadata) = std::fs::metadata(&media.file_path) {
+                        tracing::info!("File exists, size: {} bytes", metadata.len());
+                        if metadata.permissions().readonly() {
+                            tracing::warn!("File is read-only");
+                        }
+                    } else {
+                        tracing::error!("Cannot access file metadata - file may not exist or be readable");
+                    }
+                }
+            }
+            
+            // Try direct Python import test if using pipx
+            if command_runner.0 == "pipx" {
+                tracing::info!("Testing WhisperX Python environment...");
+                if let Ok(import_test) = Command::new("pipx")
+                    .args(&["runpip", "whisperx", "-c", "import whisperx; print('WhisperX import OK')"]) 
+                    .output() {
+                    if import_test.status.success() {
+                        tracing::info!("WhisperX Python import successful");
+                    } else {
+                        let import_err = String::from_utf8_lossy(&import_test.stderr);
+                        tracing::error!("WhisperX Python import failed: {}", import_err);
+                        
+                        // Provide specific fix suggestions based on error
+                        if import_err.contains("torch") {
+                            tracing::error!("PyTorch not found. Install with: pipx inject whisperx torch torchaudio");
+                        } else if import_err.contains("transformers") {
+                            tracing::error!("Transformers not found. Install with: pipx inject whisperx transformers");
+                        }
+                    }
+                }
+            }
+        }
+        
+        (output, "WhisperX")
+    } else {
+        // Regular Whisper command (no streaming progress)
+        let mut cmd = Command::new(&command_runner.0);
+        
+        // Add any prefix arguments (like "run" for pipx)
+        for arg in &command_runner.1 {
+            cmd.arg(arg);
+        }
+        
+        cmd.arg(&media.file_path)
+           .arg("--model").arg("base")
+           .arg("--output_format").arg("json")
+           .arg("--output_dir").arg(temp_dir.path())
+           .arg("--verbose").arg("True");
+        
+        if let Some(lang) = &request.language {
+            tracing::info!("Using language: {}", lang);
+            cmd.arg("--language").arg(lang);
+        }
+        
+        if request.enable_speaker_diarization {
+            tracing::warn!("Speaker diarization requested but not supported by OpenAI Whisper. Use WhisperX for this feature.");
+            broadcast_transcription_progress(&media_id, "processing", 15.0, 
+                Some("Note: Speaker diarization not available with base Whisper".to_string()));
+        }
+        
+        tracing::info!("Executing Whisper command...");
+        broadcast_transcription_progress(&media_id, "processing", 20.0, Some("Running Whisper transcription...".to_string()));
+        
+        let output = cmd.output().map_err(|e| {
+            tracing::error!("Failed to run whisper: {}", e);
+            broadcast_transcription_progress(&media_id, "error", 0.0, Some(format!("Failed to run Whisper: {}", e)));
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        
+        (output, "Whisper")
+    };
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        
+        // Create a more informative error message
+        let error_msg = if !stderr.is_empty() {
+            // Parse the error for known patterns
+            let stderr_str = stderr.to_string();
+            if stderr_str.contains("ModuleNotFoundError") {
+                format!("Missing Python dependencies. {}", stderr_str.lines().next().unwrap_or(&stderr_str))
+            } else if stderr_str.contains("CUDA") || stderr_str.contains("GPU") {
+                "GPU/CUDA error. Try using CPU mode or a smaller model.".to_string()
+            } else if stderr_str.contains("ffmpeg") {
+                "FFmpeg error. Ensure ffmpeg is installed and the media file is valid.".to_string()
+            } else if stderr_str.contains("No such file or directory") {
+                format!("File not found error. Check file path: {}", media.file_path)
+            } else {
+                stderr_str
+            }
+        } else if !stdout.is_empty() {
+            stdout.to_string()
+        } else {
+            format!("{} failed with exit code {} but produced no output. This often indicates missing dependencies or incorrect installation.", 
+                used_engine, 
+                output.status.code().unwrap_or(-1))
+        };
+        
+        tracing::error!("{} failed: {}", used_engine, error_msg);
+        tracing::error!("Exit code: {:?}", output.status.code());
+        
+        // Provide helpful suggestions based on the engine and error
+        let suggestion = if used_engine == "WhisperX" {
+            if error_msg.contains("ModuleNotFoundError") || error_msg.contains("ImportError") {
+                "\n\nFix missing dependencies:\n1. Reinstall WhisperX: pipx reinstall --python python3.12 whisperx\n2. Inject dependencies: pipx inject whisperx torch torchaudio transformers\n3. Or try regular Whisper: Set TRANSCRIPTION_ENGINE=whisper"
+            } else {
+                "\n\nTroubleshooting:\n1. Check WhisperX installation: pipx list\n2. Reinstall if needed: pipx reinstall --python python3.12 whisperx\n3. Install missing dependencies: pipx inject whisperx torch torchaudio transformers\n4. Try regular Whisper: Set TRANSCRIPTION_ENGINE=whisper"
+            }
+        } else {
+            "\n\nTroubleshooting:\n1. Check Whisper installation: pipx list\n2. Reinstall if needed: pipx reinstall --python python3.12 openai-whisper\n3. Check ffmpeg is installed: ffmpeg -version"
+        };
+        
+        let full_error = format!("{}{}", error_msg, suggestion);
+        
+        broadcast_transcription_progress(&media_id, "error", 0.0, Some(error_msg.clone()));
+        return Ok(Json(ApiResponse::error(full_error)));
+    }
+    
+    // Log stdout for debugging
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.is_empty() {
+        tracing::debug!("{} stdout: {}", used_engine, stdout);
+    }
+    
+    tracing::info!("{} completed successfully, parsing output...", used_engine);
+    broadcast_transcription_progress(&media_id, "processing", 70.0, Some("Parsing transcription results...".to_string()));
+    
+    // Parse Whisper output
+    // Whisper creates output files based on the input filename
+    // Due to special characters and escaping, we'll look for any .json file in the output directory
+    let output_dir = temp_dir.path();
+    
+    // Find the JSON file in the output directory
+    let json_path = std::fs::read_dir(output_dir)
+        .map_err(|e| {
+            tracing::error!("Failed to read output directory: {}", e);
+            broadcast_transcription_progress(&media_id, "error", 0.0, Some(format!("Failed to read output directory: {}", e)));
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("json"))
+                .unwrap_or(false)
+        })
+        .ok_or_else(|| {
+            tracing::error!("No JSON file found in output directory: {:?}", output_dir);
+            
+            // List all files for debugging
+            if let Ok(entries) = std::fs::read_dir(output_dir) {
+                tracing::error!("Files in output directory:");
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        tracing::error!("  - {:?}", entry.path());
+                    }
+                }
+            }
+            
+            broadcast_transcription_progress(&media_id, "error", 0.0, Some("No transcription output file found".to_string()));
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    
+    tracing::info!("Found Whisper output at: {:?}", json_path);
+    
+    let json_content = std::fs::read_to_string(&json_path).map_err(|e| {
+        tracing::error!("Failed to read whisper output from {:?}: {}", json_path, e);
+        broadcast_transcription_progress(&media_id, "error", 0.0, Some(format!("Failed to read output: {}", e)));
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    
+    tracing::info!("Successfully read Whisper output, parsing JSON...");
+    
+    let whisper_result: serde_json::Value = serde_json::from_str(&json_content).map_err(|e| {
+        tracing::error!("Failed to parse whisper JSON output: {}", e);
+        broadcast_transcription_progress(&media_id, "error", 0.0, Some(format!("Failed to parse output: {}", e)));
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    
+    // Extract text and segments
+    let full_text = whisper_result["text"].as_str().unwrap_or("").to_string();
+    let segments_array = whisper_result["segments"].as_array();
+    
+    tracing::info!("Extracted transcription text ({} characters)", full_text.len());
+    broadcast_transcription_progress(&media_id, "processing", 80.0, Some("Processing transcription segments...".to_string()));
+    
+    let mut segments = Vec::new();
+    if let Some(segs) = segments_array {
+        tracing::info!("Processing {} transcription segments", segs.len());
+        
+        for (idx, seg) in segs.iter().enumerate() {
+            let segment = TranscriptionSegment {
+                start_time: seg["start"].as_f64().unwrap_or(0.0),
+                end_time: seg["end"].as_f64().unwrap_or(0.0),
+                text: seg["text"].as_str().unwrap_or("").to_string(),
+                speaker: seg["speaker"].as_str().map(|s| s.to_string()),
+                confidence: seg["confidence"].as_f64().map(|c| c as f32),
+            };
+            
+            // Broadcast each segment as it's processed for real-time updates
+            broadcast_transcription_segment(&media_id, TranscriptionSegmentUpdate {
+                start_time: segment.start_time,
+                end_time: segment.end_time,
+                text: segment.text.clone(),
+                confidence: segment.confidence,
+            });
+            
+            segments.push(segment);
+            
+            // Update progress based on segments processed
+            let progress = 80.0 + (15.0 * (idx + 1) as f32 / segs.len() as f32);
+            broadcast_transcription_progress(&media_id, "processing", progress, 
+                Some(format!("Processed segment {} of {}", idx + 1, segs.len())));
+        }
+    } else {
+        tracing::warn!("No segments found in Whisper output");
+    }
+    
+    // Save to database
+    let language = whisper_result["language"].as_str().map(|s| s.to_string());
+    let duration = media.duration_seconds;
+    
+    tracing::info!("Saving transcription to database (language: {:?})", language);
+    broadcast_transcription_progress(&media_id, "processing", 95.0, Some("Saving transcription to database...".to_string()));
+    
+    let transcription = crate::db::create_transcription(
+        &state.db.get_pool(),
+        &media_id,
+        &full_text,
+        &segments,
+        language.as_deref(),
+        duration,
+        "whisper-base",
+    ).await.map_err(|e| {
+        tracing::error!("Failed to save transcription to database: {}", e);
+        broadcast_transcription_progress(&media_id, "error", 0.0, Some(format!("Failed to save: {}", e)));
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    
+    tracing::info!("Successfully completed transcription for media_id: {}", media_id);
+    broadcast_transcription_progress(&media_id, "complete", 100.0, Some("Transcription complete!".to_string()));
+    
+    Ok(Json(ApiResponse::success(TranscriptionResponse {
+        transcription,
+        segments,
+    })))
+}
+
+pub async fn get_transcription(
+    State(state): State<Arc<AppState>>,
+    Path(media_id): Path<String>,
+) -> Result<Json<ApiResponse<TranscriptionResponse>>, StatusCode> {
+    match crate::db::get_transcription_by_media(&state.db.get_pool(), &media_id).await {
+        Ok(Some(transcription)) => {
+            let segments: Vec<TranscriptionSegment> = transcription.transcription_segments
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok())
+                .unwrap_or_default();
+            
+            Ok(Json(ApiResponse::success(TranscriptionResponse {
+                transcription,
+                segments,
+            })))
+        }
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Failed to get transcription: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn delete_transcription(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<()>>, StatusCode> {
+    match crate::db::delete_transcription(&state.db.get_pool(), &id).await {
+        Ok(()) => Ok(Json(ApiResponse::success(()))),
+        Err(e) => {
+            tracing::error!("Failed to delete transcription: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TranscriptionSearchQuery {
+    pub q: String,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+pub async fn search_transcriptions(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<TranscriptionSearchQuery>,
+) -> Result<Json<ApiResponse<Vec<(Transcription, String)>>>, StatusCode> {
+    let limit = query.limit.unwrap_or(50);
+    let offset = query.offset.unwrap_or(0);
+    
+    match crate::db::search_transcriptions(&state.db.get_pool(), &query.q, limit, offset).await {
+        Ok(results) => Ok(Json(ApiResponse::success(results))),
+        Err(e) => {
+            tracing::error!("Failed to search transcriptions: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

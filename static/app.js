@@ -4,6 +4,8 @@ const pageSize = 20;
 let currentFilter = '';
 let currentSearch = '';
 let totalPages = 1;
+let websocket = null;
+let reconnectInterval = null;
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
@@ -11,7 +13,319 @@ document.addEventListener('DOMContentLoaded', () => {
     loadGallery();
     setupEventListeners();
     setupUploadArea();
+    connectWebSocket();
 });
+
+// WebSocket connection
+function connectWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    
+    console.log('Connecting to WebSocket:', wsUrl);
+    websocket = new WebSocket(wsUrl);
+    
+    websocket.onopen = () => {
+        console.log('WebSocket connected');
+        clearInterval(reconnectInterval);
+        
+        // Subscribe to events
+        websocket.send(JSON.stringify({
+            type: 'subscribe',
+            events: ['transcription', 'scan', 'media_update', 'face_detection']
+        }));
+    };
+    
+    websocket.onmessage = (event) => {
+        try {
+            const message = JSON.parse(event.data);
+            handleWebSocketMessage(message);
+        } catch (error) {
+            console.error('Error parsing WebSocket message:', error);
+        }
+    };
+    
+    websocket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+    };
+    
+    websocket.onclose = () => {
+        console.log('WebSocket disconnected');
+        websocket = null;
+        
+        // Attempt to reconnect after 5 seconds
+        if (!reconnectInterval) {
+            reconnectInterval = setInterval(() => {
+                console.log('Attempting to reconnect WebSocket...');
+                connectWebSocket();
+            }, 5000);
+        }
+    };
+}
+
+// Handle WebSocket messages
+function handleWebSocketMessage(message) {
+    console.log('WebSocket message:', message);
+    
+    switch (message.type) {
+        case 'connected':
+            console.log('Connected with client ID:', message.client_id);
+            showNotification('Connected to real-time updates', 'success');
+            break;
+            
+        case 'transcription_progress':
+            handleTranscriptionProgress(message);
+            break;
+            
+        case 'transcription_segment':
+            handleTranscriptionSegment(message);
+            break;
+            
+        case 'scan_progress':
+            handleScanProgress(message);
+            break;
+            
+        case 'media_updated':
+            handleMediaUpdate(message);
+            break;
+            
+        case 'face_detection_progress':
+            handleFaceDetectionProgress(message);
+            break;
+            
+        case 'error':
+            showNotification(`Error: ${message.message}`, 'error');
+            break;
+    }
+}
+
+// Handle transcription progress updates
+function handleTranscriptionProgress(message) {
+    const { media_id, status, progress, message: msg } = message;
+    
+    // Update UI if we're viewing this media
+    const panel = document.getElementById('media-panel');
+    if (panel && panel.dataset.currentMediaId === media_id) {
+        const transcriptionSection = document.getElementById('transcription-section');
+        if (transcriptionSection) {
+            // Update or create progress indicator
+            let progressEl = transcriptionSection.querySelector('.transcription-progress');
+            if (!progressEl) {
+                progressEl = document.createElement('div');
+                progressEl.className = 'transcription-progress';
+                transcriptionSection.insertBefore(progressEl, transcriptionSection.firstChild);
+            }
+            
+            // Check if it's an error about Whisper not being installed
+            if (status === 'error' && msg && msg.includes('Whisper is not installed')) {
+                progressEl.innerHTML = `
+                    <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 15px; margin: 10px 0;">
+                        <h4 style="color: #856404; margin: 0 0 10px 0;">⚠️ Whisper Not Installed</h4>
+                        <p style="color: #856404; margin: 0 0 10px 0;">The transcription feature requires OpenAI Whisper to be installed.</p>
+                        <p style="color: #856404; margin: 0 0 10px 0;">To install Whisper, run:</p>
+                        <code style="background: #f8f9fa; padding: 5px 10px; border-radius: 4px; display: block; margin: 10px 0;">
+                            pip install openai-whisper
+                        </code>
+                        <p style="color: #856404; margin: 10px 0 0 0; font-size: 12px;">
+                            Or run the included script: <code>./install_whisper.sh</code>
+                        </p>
+                    </div>
+                `;
+            } else {
+                progressEl.innerHTML = `
+                    <div class="progress-bar" style="margin: 10px 0;">
+                        <div class="progress-fill" style="width: ${progress}%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"></div>
+                    </div>
+                    <p style="font-size: 14px; color: ${status === 'error' ? '#dc3545' : '#666'};">${msg || `Transcription ${status}...`}</p>
+                `;
+            }
+            
+            if (status === 'complete') {
+                setTimeout(() => {
+                    progressEl.remove();
+                    // Reload transcription data
+                    loadTranscriptionForMedia(media_id);
+                }, 2000);
+            } else if (status === 'error' && !msg.includes('Whisper is not installed')) {
+                // Remove error message after 5 seconds for other errors
+                setTimeout(() => {
+                    progressEl.remove();
+                }, 5000);
+            }
+        }
+    }
+}
+
+// Handle transcription segment updates (for streaming)
+function handleTranscriptionSegment(message) {
+    const { media_id, segment } = message;
+    
+    // Update UI if we're viewing this media
+    const panel = document.getElementById('media-panel');
+    if (panel && panel.dataset.currentMediaId === media_id) {
+        const transcriptionContent = document.getElementById('transcription-content');
+        if (transcriptionContent) {
+            // Append segment to transcription display
+            const segmentEl = document.createElement('div');
+            segmentEl.className = 'transcription-segment';
+            segmentEl.innerHTML = `
+                <span class="segment-time">[${formatTime(segment.start_time)} - ${formatTime(segment.end_time)}]</span>
+                <span class="segment-text">${segment.text}</span>
+            `;
+            transcriptionContent.appendChild(segmentEl);
+        }
+    }
+}
+
+// Handle scan progress updates
+function handleScanProgress(message) {
+    const { path, files_scanned, files_added, files_updated } = message;
+    showNotification(`Scanning: ${files_scanned} files (${files_added} new, ${files_updated} updated)`, 'info');
+}
+
+// Handle media update notifications
+function handleMediaUpdate(message) {
+    const { media_id, update_type } = message;
+    
+    // Refresh gallery if visible
+    if (document.getElementById('gallery').children.length > 0) {
+        // Could selectively update just the affected item
+        console.log(`Media ${media_id} updated: ${update_type}`);
+    }
+}
+
+// Handle face detection progress
+function handleFaceDetectionProgress(message) {
+    const { media_id, faces_detected } = message;
+    console.log(`Face detection for ${media_id}: ${faces_detected} faces found`);
+}
+
+// Show notification
+function showNotification(message, type = 'info') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 15px 20px;
+        background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : '#2196F3'};
+        color: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        z-index: 10000;
+        animation: slideIn 0.3s ease;
+        max-width: 300px;
+    `;
+    notification.textContent = message;
+    
+    document.body.appendChild(notification);
+    
+    // Remove after 5 seconds
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, 5000);
+}
+
+// Format time in seconds to mm:ss
+function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Load transcription for a specific media
+async function loadTranscriptionForMedia(mediaId) {
+    try {
+        const response = await fetch(`/api/transcriptions/media/${mediaId}`);
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.data) {
+                displayTranscription(data.data);
+            }
+        }
+    } catch (error) {
+        console.error('Error loading transcription:', error);
+    }
+}
+
+// Display transcription in the UI
+function displayTranscription(transcriptionData) {
+    const transcriptionSection = document.getElementById('transcription-section');
+    if (!transcriptionSection) return;
+    
+    const { transcription, segments } = transcriptionData;
+    
+    // Update transcription display
+    let transcriptionHTML = `
+        <div class="transcription-result">
+            <div class="transcription-header">
+                <h4>Transcription</h4>
+                <button class="small-btn danger" onclick="deleteTranscription('${transcription.id}')">Delete</button>
+            </div>
+            <div class="transcription-text">${transcription.transcription_text}</div>
+    `;
+    
+    if (segments && segments.length > 0) {
+        transcriptionHTML += `
+            <details style="margin-top: 15px;">
+                <summary style="cursor: pointer; font-weight: bold;">View Segments (${segments.length})</summary>
+                <div class="transcription-segments" id="transcription-content">
+        `;
+        
+        segments.forEach(segment => {
+            transcriptionHTML += `
+                <div class="transcription-segment">
+                    <span class="segment-time">[${formatTime(segment.start_time)} - ${formatTime(segment.end_time)}]</span>
+                    <span class="segment-text">${segment.text}</span>
+                </div>
+            `;
+        });
+        
+        transcriptionHTML += `
+                </div>
+            </details>
+        `;
+    }
+    
+    transcriptionHTML += '</div>';
+    
+    // Find or create result container
+    let resultContainer = transcriptionSection.querySelector('.transcription-result-container');
+    if (!resultContainer) {
+        resultContainer = document.createElement('div');
+        resultContainer.className = 'transcription-result-container';
+        transcriptionSection.appendChild(resultContainer);
+    }
+    
+    resultContainer.innerHTML = transcriptionHTML;
+}
+
+// Delete transcription
+async function deleteTranscription(transcriptionId) {
+    if (!confirm('Are you sure you want to delete this transcription?')) return;
+    
+    try {
+        const response = await fetch(`/api/transcriptions/${transcriptionId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            showNotification('Transcription deleted successfully', 'success');
+            // Clear the transcription display
+            const resultContainer = document.querySelector('.transcription-result-container');
+            if (resultContainer) {
+                resultContainer.innerHTML = '';
+            }
+        } else {
+            showNotification('Failed to delete transcription', 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting transcription:', error);
+        showNotification('Error deleting transcription', 'error');
+    }
+}
 
 // Load statistics
 async function loadStats() {
@@ -343,6 +657,9 @@ async function showMediaDetail(mediaId) {
                 facesSection.classList.add('hidden');
             }
             
+            // Initialize transcription for audio/video files
+            initTranscription(mediaId, media.media_type);
+            
             // Show the panel
             panel.classList.add('active');
             overlay.classList.remove('hidden');
@@ -405,16 +722,25 @@ function closePanel() {
     overlay.classList.add('hidden');
 }
 
+// Helper function to safely add event listeners
+function addEventListenerIfExists(elementId, event, handler) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.addEventListener(event, handler);
+    }
+    return element;
+}
+
 // Setup event listeners
 function setupEventListeners() {
     // Search
-    document.getElementById('search-btn').addEventListener('click', performSearch);
-    document.getElementById('search-input').addEventListener('keypress', (e) => {
+    addEventListenerIfExists('search-btn', 'click', performSearch);
+    addEventListenerIfExists('search-input', 'keypress', (e) => {
         if (e.key === 'Enter') performSearch();
     });
     
     // Filter
-    document.getElementById('filter-type').addEventListener('change', (e) => {
+    addEventListenerIfExists('filter-type', 'change', (e) => {
         currentFilter = e.target.value;
         currentPage = 1;
         loadGallery();
@@ -434,14 +760,14 @@ function setupEventListeners() {
     });
     
     // Pagination
-    document.getElementById('prev-page').addEventListener('click', () => {
+    addEventListenerIfExists('prev-page', 'click', () => {
         if (currentPage > 1) {
             currentPage--;
             loadGallery();
         }
     });
     
-    document.getElementById('next-page').addEventListener('click', () => {
+    addEventListenerIfExists('next-page', 'click', () => {
         if (currentPage < totalPages) {
             currentPage++;
             loadGallery();
@@ -449,44 +775,48 @@ function setupEventListeners() {
     });
     
     // Scan button
-    document.getElementById('scan-btn').addEventListener('click', () => {
-        document.getElementById('scan-modal').classList.remove('hidden');
+    addEventListenerIfExists('scan-btn', 'click', () => {
+        const modal = document.getElementById('scan-modal');
+        if (modal) modal.classList.remove('hidden');
     });
     
-    document.getElementById('start-scan').addEventListener('click', startScan);
+    addEventListenerIfExists('start-scan', 'click', startScan);
     
     // Duplicates button
-    document.getElementById('duplicates-btn').addEventListener('click', showDuplicates);
+    addEventListenerIfExists('duplicates-btn', 'click', showDuplicates);
     
     // Archive selected duplicates
-    document.getElementById('archive-selected-duplicates').addEventListener('click', archiveDuplicates);
+    addEventListenerIfExists('archive-selected-duplicates', 'click', archiveDuplicates);
     
-    // Stories
-    document.getElementById('stories-btn').addEventListener('click', showStories);
-    document.getElementById('create-story-btn').addEventListener('click', () => {
-        document.getElementById('create-story-modal').classList.remove('hidden');
+    // Stories - these elements may not exist in the main gallery page
+    addEventListenerIfExists('stories-btn', 'click', showStories);
+    addEventListenerIfExists('create-story-btn', 'click', () => {
+        const modal = document.getElementById('create-story-modal');
+        if (modal) modal.classList.remove('hidden');
     });
-    document.getElementById('create-story-form').addEventListener('submit', createStory);
-    document.getElementById('cancel-create-story').addEventListener('click', () => {
-        document.getElementById('create-story-modal').classList.add('hidden');
+    addEventListenerIfExists('create-story-form', 'submit', createStory);
+    addEventListenerIfExists('cancel-create-story', 'click', () => {
+        const modal = document.getElementById('create-story-modal');
+        if (modal) modal.classList.add('hidden');
     });
-    document.getElementById('add-to-story-btn').addEventListener('click', showAddToStory);
-    document.getElementById('confirm-add-to-story').addEventListener('click', addToStory);
-    document.getElementById('cancel-add-to-story').addEventListener('click', () => {
-        document.getElementById('add-to-story-modal').classList.add('hidden');
+    addEventListenerIfExists('add-to-story-btn', 'click', showAddToStory);
+    addEventListenerIfExists('confirm-add-to-story', 'click', addToStory);
+    addEventListenerIfExists('cancel-add-to-story', 'click', () => {
+        const modal = document.getElementById('add-to-story-modal');
+        if (modal) modal.classList.add('hidden');
     });
     
     // Panel close
-    document.getElementById('close-panel').addEventListener('click', closePanel);
-    document.getElementById('panel-overlay').addEventListener('click', closePanel);
+    addEventListenerIfExists('close-panel', 'click', closePanel);
+    addEventListenerIfExists('panel-overlay', 'click', closePanel);
     
     // Save media info
-    document.getElementById('save-media-info-btn').addEventListener('click', saveMediaInfo);
+    addEventListenerIfExists('save-media-info-btn', 'click', saveMediaInfo);
     
     // Conversion buttons
-    document.getElementById('convert-image-btn').addEventListener('click', () => convertMedia('image'));
-    document.getElementById('convert-video-btn').addEventListener('click', () => convertMedia('video'));
-    document.getElementById('convert-audio-btn').addEventListener('click', () => convertMedia('audio'));
+    addEventListenerIfExists('convert-image-btn', 'click', () => convertMedia('image'));
+    addEventListenerIfExists('convert-video-btn', 'click', () => convertMedia('video'));
+    addEventListenerIfExists('convert-audio-btn', 'click', () => convertMedia('audio'));
     
     // Modal close buttons - specific handlers for each modal
     document.querySelectorAll('.modal .close').forEach(btn => {
@@ -1446,6 +1776,168 @@ function drawFaceBoxes(faces, img) {
     }
 }
 
+// Transcription Functions
+async function initTranscription(mediaId, mediaType) {
+    const transcriptionSection = document.getElementById('transcription-section');
+    
+    // Only show for audio and video files
+    if (mediaType === 'audio' || mediaType === 'video') {
+        transcriptionSection.classList.remove('hidden');
+        
+        // Check if transcription already exists
+        try {
+            const response = await fetch(`/api/transcriptions/media/${mediaId}`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.data) {
+                    displayTranscription(data.data);
+                } else {
+                    // Show controls to generate transcription
+                    showTranscriptionControls();
+                }
+            } else if (response.status === 404) {
+                // No transcription exists, show controls
+                showTranscriptionControls();
+            }
+        } catch (error) {
+            console.error('Error checking transcription:', error);
+            showTranscriptionControls();
+        }
+    } else {
+        transcriptionSection.classList.add('hidden');
+    }
+}
+
+function showTranscriptionControls() {
+    document.getElementById('transcription-controls').classList.remove('hidden');
+    document.getElementById('transcription-progress').classList.add('hidden');
+    document.getElementById('transcription-result').classList.add('hidden');
+}
+
+function displayTranscription(data) {
+    const { transcription, segments } = data;
+    
+    document.getElementById('transcription-controls').classList.add('hidden');
+    document.getElementById('transcription-progress').classList.add('hidden');
+    document.getElementById('transcription-result').classList.remove('hidden');
+    
+    // Display language if detected
+    if (transcription.language) {
+        document.getElementById('transcription-language-detected').textContent = 
+            `Language: ${transcription.language.toUpperCase()}`;
+    }
+    
+    // Display main transcription text
+    document.getElementById('transcription-text').textContent = 
+        transcription.transcription_text || 'No transcription text available';
+    
+    // Display segments if available
+    if (segments && segments.length > 0) {
+        const segmentsList = document.getElementById('segments-list');
+        segmentsList.innerHTML = segments.map(seg => {
+            const timestamp = `${formatTime(seg.start_time)} - ${formatTime(seg.end_time)}`;
+            return `
+                <div class="segment-item">
+                    <div class="segment-timestamp">${timestamp}</div>
+                    ${seg.speaker ? `<div class="segment-speaker">${seg.speaker}</div>` : ''}
+                    <div class="segment-text">${seg.text}</div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    // Store transcription ID for deletion
+    document.getElementById('transcription-result').dataset.transcriptionId = transcription.id;
+}
+
+function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+async function generateTranscription() {
+    const mediaPanel = document.getElementById('media-panel');
+    const mediaId = mediaPanel.dataset.currentMediaId;
+    
+    if (!mediaId) return;
+    
+    const language = document.getElementById('transcription-language').value;
+    const enableDiarization = document.getElementById('enable-speaker-diarization').checked;
+    
+    // Show progress
+    document.getElementById('transcription-controls').classList.add('hidden');
+    document.getElementById('transcription-progress').classList.remove('hidden');
+    document.getElementById('transcription-status').textContent = 'Transcribing...';
+    
+    try {
+        const response = await fetch('/api/transcribe', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                media_file_id: mediaId,
+                language: language || null,
+                enable_speaker_diarization: enableDiarization
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            displayTranscription(data.data);
+        } else {
+            alert('Transcription failed: ' + (data.error || 'Unknown error'));
+            showTranscriptionControls();
+        }
+    } catch (error) {
+        console.error('Error generating transcription:', error);
+        alert('Failed to generate transcription');
+        showTranscriptionControls();
+    } finally {
+        document.getElementById('transcription-progress').classList.add('hidden');
+    }
+}
+
+async function deleteTranscription() {
+    const transcriptionResult = document.getElementById('transcription-result');
+    const transcriptionId = transcriptionResult.dataset.transcriptionId;
+    
+    if (!transcriptionId) return;
+    
+    if (!confirm('Are you sure you want to delete this transcription?')) return;
+    
+    try {
+        const response = await fetch(`/api/transcriptions/${transcriptionId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            showTranscriptionControls();
+            transcriptionResult.dataset.transcriptionId = '';
+        } else {
+            alert('Failed to delete transcription');
+        }
+    } catch (error) {
+        console.error('Error deleting transcription:', error);
+        alert('Failed to delete transcription');
+    }
+}
+
+function toggleTranscriptionSegments() {
+    const segments = document.getElementById('transcription-segments');
+    const button = document.getElementById('toggle-segments-btn');
+    
+    if (segments.classList.contains('hidden')) {
+        segments.classList.remove('hidden');
+        button.textContent = 'Hide Detailed Segments';
+    } else {
+        segments.classList.add('hidden');
+        button.textContent = 'Show Detailed Segments';
+    }
+}
+
 // Update the DOMContentLoaded event listener
 document.addEventListener('DOMContentLoaded', () => {
     loadStats();
@@ -1465,6 +1957,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 reprocessSingleFile(mediaId);
             }
         });
+    }
+    
+    // Add transcription event handlers
+    const transcribeBtn = document.getElementById('transcribe-btn');
+    if (transcribeBtn) {
+        transcribeBtn.addEventListener('click', generateTranscription);
+    }
+    
+    const deleteTranscriptionBtn = document.getElementById('delete-transcription-btn');
+    if (deleteTranscriptionBtn) {
+        deleteTranscriptionBtn.addEventListener('click', deleteTranscription);
+    }
+    
+    const toggleSegmentsBtn = document.getElementById('toggle-segments-btn');
+    if (toggleSegmentsBtn) {
+        toggleSegmentsBtn.addEventListener('click', toggleTranscriptionSegments);
     }
     
     // Listen for media refresh events

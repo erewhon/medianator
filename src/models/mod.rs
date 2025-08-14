@@ -333,3 +333,38 @@ impl MediaFile {
         self.longitude
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Transcription {
+    pub id: String,
+    pub media_file_id: String,
+    pub transcription_text: Option<String>,
+    pub transcription_segments: Option<String>, // JSON array of TranscriptionSegment
+    pub language: Option<String>,
+    pub duration_seconds: Option<f64>,
+    pub model_used: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionSegment {
+    pub start_time: f64,
+    pub end_time: f64,
+    pub text: String,
+    pub speaker: Option<String>, // Speaker identifier (e.g., "Speaker 1", "Speaker 2")
+    pub confidence: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionRequest {
+    pub media_file_id: String,
+    pub language: Option<String>, // Optional language hint
+    pub enable_speaker_diarization: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionResponse {
+    pub transcription: Transcription,
+    pub segments: Vec<TranscriptionSegment>,
+}

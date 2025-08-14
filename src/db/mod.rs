@@ -1,6 +1,7 @@
 mod face_grouping;
 mod groups_albums;
 mod stories;
+mod transcriptions;
 
 use anyhow::Result;
 use sqlx::{migrate::MigrateDatabase, Pool, Sqlite, SqlitePool};
@@ -8,6 +9,7 @@ use tracing::info;
 
 use crate::models::{MediaFile, MediaMetadata, ScanHistory, Face, FaceGroup, Story, StoryWithItems};
 pub use stories::StoryDatabase;
+pub use transcriptions::*;
 
 #[derive(Clone)]
 pub struct Database {
