@@ -14,6 +14,8 @@ A high-performance asynchronous media catalog engine written in Rust that scans,
 - **🖼️ Thumbnail Generation**: Automatic thumbnail creation for images and videos
 - **🔄 Duplicate Detection**: Find and manage duplicate files based on content hash
 - **👤 Face Detection**: Detect faces in images using skin-tone detection and group similar faces together
+- **📅 Auto-grouping**: Automatically group media by date, location (GPS), or events
+- **📚 Smart Albums**: Create dynamic albums with customizable filters (date range, location, camera, resolution)
 - **🎨 Web UI**: Beautiful web interface for browsing, searching, and uploading media
 - **💾 SQLite Storage**: Lightweight embedded database with full-text search
 - **🌐 RESTful API**: Complete web API with CORS support
@@ -278,6 +280,97 @@ Content-Type: application/json
 ```
 Adds a detected face to a face group.
 
+### Media Groups Endpoints
+
+#### List Media Groups
+```http
+GET /api/groups
+```
+Returns all media groups (date, location, event groups).
+
+#### Get Media Group with Items
+```http
+GET /api/groups/{id}
+```
+Returns a specific media group with all its media items.
+
+#### Auto-Group Media
+```http
+POST /api/groups/auto
+Content-Type: application/json
+
+{
+  "group_type": "date"  // or "location" or "event"
+}
+```
+Automatically groups media by the specified criteria:
+- `date`: Groups media taken on the same day
+- `location`: Groups media within 1km radius using GPS data
+- `event`: Groups media by date and location proximity
+
+### Smart Albums Endpoints
+
+#### List Smart Albums
+```http
+GET /api/albums
+```
+Returns all smart albums.
+
+#### Create Smart Album
+```http
+POST /api/albums
+Content-Type: application/json
+
+{
+  "name": "Recent Photos",
+  "description": "Photos from the last 30 days",
+  "filter": {
+    "media_type": ["image"],
+    "date_range": {
+      "start": "2024-01-01T00:00:00Z",
+      "end": "2024-12-31T23:59:59Z"
+    },
+    "location_radius": {
+      "latitude": 37.7749,
+      "longitude": -122.4194,
+      "radius_km": 10
+    },
+    "camera_make": ["Canon", "Nikon"],
+    "has_faces": true,
+    "min_resolution": 3840
+  }
+}
+```
+Creates a new smart album with the specified filters.
+
+#### Get Smart Album
+```http
+GET /api/albums/{id}
+```
+Returns details of a specific smart album.
+
+#### Get Smart Album Media
+```http
+GET /api/albums/{id}/media
+```
+Returns all media items that match the smart album's filters.
+
+#### Refresh Smart Album
+```http
+POST /api/albums/{id}/refresh
+```
+Re-evaluates the smart album's filters and updates its media items.
+
+#### Create Default Smart Albums
+```http
+POST /api/albums/defaults
+```
+Creates a set of commonly used smart albums:
+- Recent Photos (last 30 days)
+- All Videos
+- High Resolution (4K+)
+- People (photos with faces)
+
 ### Metrics Endpoint
 
 ```http
@@ -351,6 +444,41 @@ face_group_members
 ├── group_id
 ├── similarity_score
 └── added_at
+
+media_groups
+├── id (UUID)
+├── group_type (date|location|event)
+├── group_name
+├── group_date
+├── latitude
+├── longitude
+├── location_name
+├── media_count
+├── total_size
+├── cover_media_id
+└── timestamps
+
+media_group_members
+├── media_id
+├── group_id
+└── added_at
+
+smart_albums
+├── id (UUID)
+├── album_name
+├── description
+├── filter_rules (JSON)
+├── sort_order
+├── media_count
+├── cover_media_id
+├── is_public
+└── timestamps
+
+smart_album_members
+├── album_id
+├── media_id
+├── match_score
+└── added_at
 ```
 
 ## Usage Examples
@@ -389,6 +517,33 @@ faces = requests.get(f'http://localhost:3000/api/media/{media_id}/faces').json()
 # Create a face group
 group = requests.post('http://localhost:3000/api/faces/groups',
                       json={'name': 'Family'}).json()
+
+# Auto-group media by date
+date_groups = requests.post('http://localhost:3000/api/groups/auto',
+                           json={'group_type': 'date'}).json()
+
+# Auto-group media by location
+location_groups = requests.post('http://localhost:3000/api/groups/auto',
+                               json={'group_type': 'location'}).json()
+
+# Create a smart album for recent photos
+smart_album = requests.post('http://localhost:3000/api/albums',
+                           json={
+                               'name': 'Recent Photos',
+                               'description': 'Last 30 days',
+                               'filter': {
+                                   'media_type': ['image'],
+                                   'date_range': {
+                                       'start': '2024-01-01T00:00:00Z'
+                                   }
+                               }
+                           }).json()
+
+# Get media in a smart album
+album_media = requests.get(f'http://localhost:3000/api/albums/{album_id}/media').json()
+
+# Create default smart albums
+default_albums = requests.post('http://localhost:3000/api/albums/defaults').json()
 ```
 
 ### cURL Examples
@@ -421,6 +576,27 @@ curl http://localhost:3000/api/media/{media_id}/faces
 
 # List face groups
 curl http://localhost:3000/api/faces/groups
+
+# Auto-group media by date
+curl -X POST http://localhost:3000/api/groups/auto \
+  -H "Content-Type: application/json" \
+  -d '{"group_type": "date"}'
+
+# Auto-group media by location
+curl -X POST http://localhost:3000/api/groups/auto \
+  -H "Content-Type: application/json" \
+  -d '{"group_type": "location"}'
+
+# Create a smart album
+curl -X POST http://localhost:3000/api/albums \
+  -H "Content-Type: application/json" \
+  -d '{"name": "High Resolution", "filter": {"min_resolution": 3840}}'
+
+# Get smart album media
+curl http://localhost:3000/api/albums/{album_id}/media
+
+# Create default smart albums
+curl -X POST http://localhost:3000/api/albums/defaults
 ```
 
 ## Performance
@@ -515,8 +691,8 @@ scrape_configs:
 - [ ] WebSocket real-time updates
 - [ ] Batch operations API
 - [ ] Plugin system
-- [ ] Auto-grouping by date/location
-- [ ] Smart album creation
+- [x] Auto-grouping by date/location
+- [x] Smart album creation
 - [ ] OCR text extraction from images
 
 ## Contributing

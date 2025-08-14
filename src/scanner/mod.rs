@@ -5,6 +5,8 @@ pub mod duplicate;
 pub mod viola_jones_detector;
 pub mod opencv_face_detector;
 pub mod sub_image_extractor;
+pub mod grouping;
+pub mod smart_albums;
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};

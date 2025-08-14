@@ -1,4 +1,5 @@
 mod face_grouping;
+mod groups_albums;
 
 use anyhow::Result;
 use sqlx::{migrate::MigrateDatabase, Pool, Sqlite, SqlitePool};

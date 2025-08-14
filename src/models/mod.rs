@@ -75,6 +75,13 @@ pub struct MediaFile {
     pub sub_image_index: Option<i32>,
     pub extraction_metadata: Option<String>,
     
+    // Location fields
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub altitude: Option<f64>,
+    pub location_name: Option<String>,
+    pub date_taken: Option<DateTime<Utc>>,
+    
     pub extra_metadata: Option<String>,
 }
 
@@ -91,6 +98,8 @@ pub struct MediaMetadata {
     pub duration_seconds: Option<f64>,
     pub camera_info: Option<CameraInfo>,
     pub codec_info: Option<CodecInfo>,
+    pub location_info: Option<LocationInfo>,
+    pub date_taken: Option<DateTime<Utc>>,
     pub timestamps: FileTimestamps,
     pub extra: Option<serde_json::Value>,
 }
@@ -111,6 +120,13 @@ pub struct CameraInfo {
     pub iso: Option<i32>,
     pub shutter_speed: Option<String>,
     pub orientation: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationInfo {
+    pub latitude: f64,
+    pub longitude: f64,
+    pub altitude: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,4 +230,75 @@ pub struct FaceGroupMember {
     pub similarity_score: f32,
     pub media_file_path: String,
     pub face_bbox: FaceBoundingBox,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct MediaGroup {
+    pub id: String,
+    pub group_type: String,
+    pub group_name: String,
+    pub group_date: Option<chrono::NaiveDate>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub location_name: Option<String>,
+    pub media_count: i32,
+    pub total_size: i64,
+    pub cover_media_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaGroupWithItems {
+    pub group: MediaGroup,
+    pub media_items: Vec<MediaFile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct SmartAlbum {
+    pub id: String,
+    pub album_name: String,
+    pub description: Option<String>,
+    pub filter_rules: String, // JSON string
+    pub sort_order: Option<String>,
+    pub media_count: i32,
+    pub cover_media_id: Option<String>,
+    pub is_public: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub last_refreshed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmartAlbumFilter {
+    pub media_type: Option<Vec<String>>,
+    pub date_range: Option<DateRange>,
+    pub location_radius: Option<LocationRadius>,
+    pub camera_make: Option<Vec<String>>,
+    pub has_faces: Option<bool>,
+    pub min_resolution: Option<u32>,
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DateRange {
+    pub start: Option<DateTime<Utc>>,
+    pub end: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationRadius {
+    pub latitude: f64,
+    pub longitude: f64,
+    pub radius_km: f64,
+}
+
+impl MediaFile {
+    pub fn latitude(&self) -> Option<f64> {
+        self.latitude
+    }
+
+    pub fn longitude(&self) -> Option<f64> {
+        self.longitude
+    }
 }

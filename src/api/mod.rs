@@ -54,6 +54,17 @@ pub fn create_app(db: Database, scanner: MediaScanner) -> Router {
         .route("/api/faces/:face_id/thumbnail", get(handlers::get_face_thumbnail))
         .route("/api/media/:id/reprocess", post(handlers::reprocess_media))
         .route("/api/batch/reprocess", post(handlers::batch_reprocess))
+        // Media Groups endpoints
+        .route("/api/groups", get(handlers::get_media_groups))
+        .route("/api/groups/:id", get(handlers::get_media_group))
+        .route("/api/groups/auto", post(handlers::auto_group_media))
+        // Smart Albums endpoints
+        .route("/api/albums", get(handlers::get_smart_albums))
+        .route("/api/albums", post(handlers::create_smart_album))
+        .route("/api/albums/defaults", post(handlers::create_default_smart_albums))
+        .route("/api/albums/:id", get(handlers::get_smart_album))
+        .route("/api/albums/:id/media", get(handlers::get_smart_album_media))
+        .route("/api/albums/:id/refresh", post(handlers::refresh_smart_album))
         .route("/metrics", get(metrics::metrics_handler))
         .fallback_service(ServeDir::new("static").append_index_html_on_directories(true))
         .layer(MetricsMiddleware::new())

@@ -12,7 +12,7 @@ use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
 use crate::db::Database;
-use crate::models::{MediaFile, Face, FaceGroup, DuplicateGroup};
+use crate::models::{MediaFile, Face, FaceGroup, DuplicateGroup, MediaGroup, MediaGroupWithItems, SmartAlbum, SmartAlbumFilter};
 use crate::scanner::{MediaScanner, ScanStats, duplicate::DuplicateDetector};
 
 pub struct AppState {
@@ -890,6 +890,165 @@ pub async fn get_faces_grouped(
         Ok(groups) => Ok(Json(ApiResponse::success(groups))),
         Err(e) => {
             tracing::error!("Failed to get grouped faces: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// Media Groups Endpoints
+
+pub async fn get_media_groups(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ApiResponse<Vec<MediaGroup>>>, StatusCode> {
+    match state.db.get_all_media_groups().await {
+        Ok(groups) => Ok(Json(ApiResponse::success(groups))),
+        Err(e) => {
+            tracing::error!("Failed to get media groups: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn get_media_group(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<MediaGroupWithItems>>, StatusCode> {
+    match state.db.get_media_group_with_items(&id).await {
+        Ok(Some(group)) => Ok(Json(ApiResponse::success(group))),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Failed to get media group: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AutoGroupRequest {
+    pub group_type: String, // "date", "location", or "event"
+}
+
+pub async fn auto_group_media(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<AutoGroupRequest>,
+) -> Result<Json<ApiResponse<Vec<MediaGroup>>>, StatusCode> {
+    use crate::scanner::grouping::MediaGrouper;
+    
+    let grouper = MediaGrouper::new(state.db.as_ref().clone());
+    
+    let groups = match req.group_type.as_str() {
+        "date" => grouper.group_by_date().await,
+        "location" => grouper.group_by_location().await,
+        "event" => grouper.group_by_events().await,
+        _ => {
+            return Ok(Json(ApiResponse::error(
+                "Invalid group type. Use 'date', 'location', or 'event'".to_string()
+            )));
+        }
+    };
+    
+    match groups {
+        Ok(groups) => Ok(Json(ApiResponse::success(groups))),
+        Err(e) => {
+            tracing::error!("Failed to auto-group media: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// Smart Albums Endpoints
+
+pub async fn get_smart_albums(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ApiResponse<Vec<SmartAlbum>>>, StatusCode> {
+    match state.db.get_all_smart_albums().await {
+        Ok(albums) => Ok(Json(ApiResponse::success(albums))),
+        Err(e) => {
+            tracing::error!("Failed to get smart albums: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn get_smart_album(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<SmartAlbum>>, StatusCode> {
+    match state.db.get_smart_album(&id).await {
+        Ok(Some(album)) => Ok(Json(ApiResponse::success(album))),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Failed to get smart album: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn get_smart_album_media(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<Vec<MediaFile>>>, StatusCode> {
+    match state.db.get_smart_album_media(&id).await {
+        Ok(media) => Ok(Json(ApiResponse::success(media))),
+        Err(e) => {
+            tracing::error!("Failed to get smart album media: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateSmartAlbumRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub filter: SmartAlbumFilter,
+}
+
+pub async fn create_smart_album(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CreateSmartAlbumRequest>,
+) -> Result<Json<ApiResponse<SmartAlbum>>, StatusCode> {
+    use crate::scanner::smart_albums::SmartAlbumManager;
+    
+    let manager = SmartAlbumManager::new(state.db.as_ref().clone());
+    
+    match manager.create_smart_album(req.name, req.description, req.filter).await {
+        Ok(album) => Ok(Json(ApiResponse::success(album))),
+        Err(e) => {
+            tracing::error!("Failed to create smart album: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn refresh_smart_album(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<()>>, StatusCode> {
+    use crate::scanner::smart_albums::SmartAlbumManager;
+    
+    let manager = SmartAlbumManager::new(state.db.as_ref().clone());
+    
+    match manager.refresh_smart_album(&id).await {
+        Ok(()) => Ok(Json(ApiResponse::success(()))),
+        Err(e) => {
+            tracing::error!("Failed to refresh smart album: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn create_default_smart_albums(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ApiResponse<Vec<SmartAlbum>>>, StatusCode> {
+    use crate::scanner::smart_albums::SmartAlbumManager;
+    
+    let manager = SmartAlbumManager::new(state.db.as_ref().clone());
+    
+    match manager.create_default_smart_albums().await {
+        Ok(albums) => Ok(Json(ApiResponse::success(albums))),
+        Err(e) => {
+            tracing::error!("Failed to create default smart albums: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
