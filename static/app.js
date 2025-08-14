@@ -161,19 +161,21 @@ async function showMediaDetail(mediaId) {
             const videoPreview = document.getElementById('video-preview');
             const audioPreview = document.getElementById('audio-preview');
             
-            imgPreview.hidden = true;
-            videoPreview.hidden = true;
-            audioPreview.hidden = true;
+            // Hide all previews first
+            imgPreview.style.display = 'none';
+            videoPreview.style.display = 'none';
+            audioPreview.style.display = 'none';
             
             if (media.media_type === 'image') {
                 imgPreview.src = `/api/media/${mediaId}/image`;
-                imgPreview.hidden = false;
+                imgPreview.style.display = 'block';
             } else if (media.media_type === 'video') {
-                videoPreview.src = media.file_path;
-                videoPreview.hidden = false;
+                // Use video streaming endpoint
+                videoPreview.src = `/api/media/${mediaId}/video`;
+                videoPreview.style.display = 'block';
             } else if (media.media_type === 'audio') {
-                audioPreview.src = media.file_path;
-                audioPreview.hidden = false;
+                audioPreview.src = `/api/media/${mediaId}/audio`;
+                audioPreview.style.display = 'block';
             }
             
             // Set camera info if available
@@ -188,13 +190,62 @@ async function showMediaDetail(mediaId) {
                 cameraInfo.classList.add('hidden');
             }
             
-            // Set faces if available
+            // Set faces if available with toggle button
             const facesSection = document.getElementById('detected-faces');
             if (facesData.success && facesData.data.length > 0) {
                 facesSection.classList.remove('hidden');
+                const facesCount = facesData.data.length;
                 document.getElementById('faces-list').innerHTML = `
-                    <p>${facesData.data.length} face(s) detected</p>
+                    <p>${facesCount} face(s) detected 
+                        <button id="toggle-faces-btn" class="toggle-faces-btn">👁 Show Faces</button>
+                    </p>
                 `;
+                
+                // Draw face boxes on image if it's an image
+                if (media.media_type === 'image') {
+                    const img = document.getElementById('media-preview');
+                    if (img) {
+                        // Store faces data for later use
+                        img.facesData = facesData.data;
+                        
+                        img.onload = () => {
+                            // Wait for layout to settle
+                            setTimeout(() => {
+                                drawFaceBoxes(facesData.data, img);
+                            }, 100);
+                        };
+                        // If image already loaded
+                        if (img.complete && img.naturalHeight !== 0) {
+                            setTimeout(() => {
+                                drawFaceBoxes(facesData.data, img);
+                            }, 100);
+                        }
+                        
+                        // Redraw on window resize
+                        window.addEventListener('resize', () => {
+                            if (img.facesData) {
+                                drawFaceBoxes(img.facesData, img);
+                            }
+                        });
+                    }
+                }
+                
+                // Add toggle functionality
+                const toggleBtn = document.getElementById('toggle-faces-btn');
+                if (toggleBtn) {
+                    toggleBtn.addEventListener('click', () => {
+                        const faceBoxes = document.querySelector('.face-boxes-overlay');
+                        if (faceBoxes) {
+                            if (faceBoxes.style.display === 'none') {
+                                faceBoxes.style.display = 'block';
+                                toggleBtn.textContent = '👁 Hide Faces';
+                            } else {
+                                faceBoxes.style.display = 'none';
+                                toggleBtn.textContent = '👁 Show Faces';
+                            }
+                        }
+                    });
+                }
             } else {
                 facesSection.classList.add('hidden');
             }
@@ -680,11 +731,17 @@ function displayFaceGroups(groups) {
             <h3>${group.group_name || `Group ${group.group_id}`} (${group.face_count} faces)</h3>
             <div class="face-group-faces">
                 ${group.faces.map(face => `
-                    <div class="face-item" data-media-id="${face.media_file_id}">
-                        <img src="/api/media/${face.media_file_id}/thumbnail" 
-                             alt="${face.file_name}"
-                             onerror="this.src='${getPlaceholderIcon('image')}'">
-                        <span class="face-confidence">${Math.round(face.confidence * 100)}%</span>
+                    <div class="face-item" data-media-id="${face.media_file_id}" onclick="loadMediaDetail('${face.media_file_id}')">
+                        <div class="face-thumbnail-container">
+                            <img src="/api/faces/${face.face_id}/thumbnail" 
+                                 alt="Face from ${face.file_name}"
+                                 class="face-thumbnail"
+                                 onerror="this.src='/api/media/${face.media_file_id}/thumbnail'">
+                        </div>
+                        <div class="face-info">
+                            <span class="face-filename">${face.file_name}</span>
+                            <span class="face-confidence">${Math.round(face.confidence * 100)}%</span>
+                        </div>
                     </div>
                 `).join('')}
             </div>
@@ -730,10 +787,80 @@ async function loadMediaDetail(mediaId) {
         const result = await response.json();
         
         if (result.success && result.data) {
-            showMediaDetail(result.data);
+            showMediaDetail(result.data.id);
         }
     } catch (error) {
         console.error('Error loading media detail:', error);
+    }
+}
+
+// Draw face bounding boxes on image
+function drawFaceBoxes(faces, img) {
+    // Remove existing overlay if any
+    const existingOverlay = img.parentElement?.querySelector('.face-boxes-overlay');
+    if (existingOverlay) {
+        existingOverlay.remove();
+    }
+    
+    // Get the image's position relative to its parent
+    const imgRect = img.getBoundingClientRect();
+    const parentRect = img.parentElement.getBoundingClientRect();
+    
+    // Create overlay container
+    const overlay = document.createElement('div');
+    overlay.className = 'face-boxes-overlay';
+    overlay.style.position = 'absolute';
+    overlay.style.top = (imgRect.top - parentRect.top) + 'px';
+    overlay.style.left = (imgRect.left - parentRect.left) + 'px';
+    overlay.style.width = img.width + 'px';
+    overlay.style.height = img.height + 'px';
+    overlay.style.pointerEvents = 'none';
+    overlay.style.display = 'none'; // Initially hidden
+    
+    // Calculate scale factors based on displayed size vs natural size
+    const scaleX = img.width / img.naturalWidth;
+    const scaleY = img.height / img.naturalHeight;
+    
+    // Draw boxes for each face
+    faces.forEach((face, index) => {
+        const bbox = face.face_bbox.split(',').map(Number);
+        if (bbox.length === 4) {
+            const [x, y, width, height] = bbox;
+            
+            const box = document.createElement('div');
+            box.className = 'face-box';
+            box.style.position = 'absolute';
+            box.style.left = (x * scaleX) + 'px';
+            box.style.top = (y * scaleY) + 'px';
+            box.style.width = (width * scaleX) + 'px';
+            box.style.height = (height * scaleY) + 'px';
+            box.style.border = '2px solid #00ff00';
+            box.style.borderRadius = '4px';
+            box.style.boxShadow = '0 0 4px rgba(0,255,0,0.5)';
+            
+            // Add label
+            const label = document.createElement('div');
+            label.className = 'face-label';
+            label.style.position = 'absolute';
+            label.style.top = '-20px';
+            label.style.left = '0';
+            label.style.background = '#00ff00';
+            label.style.color = '#000';
+            label.style.padding = '2px 6px';
+            label.style.borderRadius = '3px';
+            label.style.fontSize = '12px';
+            label.style.fontWeight = 'bold';
+            label.textContent = `Face ${index + 1} (${Math.round(face.confidence * 100)}%)`;
+            
+            box.appendChild(label);
+            overlay.appendChild(box);
+        }
+    });
+    
+    // Add overlay to image container
+    if (img.parentElement) {
+        img.parentElement.style.position = 'relative';
+        img.parentElement.appendChild(overlay);
     }
 }
 

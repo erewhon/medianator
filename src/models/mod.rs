@@ -70,6 +70,11 @@ pub struct MediaFile {
     pub thumbnail_path: Option<String>,
     pub thumbnail_generated_at: Option<DateTime<Utc>>,
     
+    pub parent_id: Option<String>,
+    pub is_sub_image: Option<bool>,
+    pub sub_image_index: Option<i32>,
+    pub extraction_metadata: Option<String>,
+    
     pub extra_metadata: Option<String>,
 }
 

@@ -4,12 +4,13 @@ pub mod face_recognition;
 pub mod duplicate;
 pub mod viola_jones_detector;
 pub mod opencv_face_detector;
+pub mod sub_image_extractor;
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
 
 use crate::db::Database;
@@ -18,6 +19,7 @@ use metadata::MetadataExtractor;
 use thumbnail::ThumbnailGenerator;
 use viola_jones_detector::ViolaJonesFaceDetector;
 use opencv_face_detector::OpenCVFaceDetector;
+use sub_image_extractor::{SubImageExtractor, ExtractionMetadata};
 
 pub enum FaceDetectorType {
     ViolaJones(ViolaJonesFaceDetector),
@@ -37,6 +39,8 @@ pub struct MediaScanner {
     db: Database,
     pub thumbnail_generator: Option<ThumbnailGenerator>,
     pub face_detector: Option<FaceDetectorType>,
+    pub sub_image_extractor: Option<SubImageExtractor>,
+    pub sub_image_output_dir: Option<PathBuf>,
 }
 
 impl MediaScanner {
@@ -45,6 +49,8 @@ impl MediaScanner {
             db,
             thumbnail_generator: None,
             face_detector: None,
+            sub_image_extractor: None,
+            sub_image_output_dir: None,
         }
     }
 
@@ -70,6 +76,13 @@ impl MediaScanner {
             self.face_detector = Some(FaceDetectorType::ViolaJones(ViolaJonesFaceDetector::new()?));
         }
         Ok(self)
+    }
+
+    pub fn with_sub_image_extraction(mut self, output_dir: PathBuf) -> Self {
+        std::fs::create_dir_all(&output_dir).ok();
+        self.sub_image_extractor = Some(SubImageExtractor::new());
+        self.sub_image_output_dir = Some(output_dir);
+        self
     }
 
     pub async fn scan_directory(&self, path: &Path) -> Result<ScanStats> {
@@ -145,19 +158,78 @@ impl MediaScanner {
                         // Generate thumbnail for images and videos
                         if let Some(ref gen) = self.thumbnail_generator {
                             if metadata.media_type == crate::models::MediaType::Image {
-                                if let Err(e) = gen.generate_thumbnail(Path::new(&metadata.file_path), &metadata.id).await {
-                                    warn!("Failed to generate thumbnail for {}: {}", metadata.file_path, e);
+                                match gen.generate_thumbnail(Path::new(&metadata.file_path), &metadata.id).await {
+                                    Ok(thumb_path) => {
+                                        // Update database with thumbnail path
+                                        if let Err(e) = self.db.update_thumbnail_path(&metadata.id, &thumb_path.to_string_lossy()).await {
+                                            warn!("Failed to update thumbnail path in database: {}", e);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to generate thumbnail for {}: {}", metadata.file_path, e);
+                                    }
                                 }
                             } else if metadata.media_type == crate::models::MediaType::Video {
-                                if let Err(e) = gen.generate_video_thumbnail(Path::new(&metadata.file_path), &metadata.id).await {
-                                    warn!("Failed to generate video thumbnail for {}: {}", metadata.file_path, e);
+                                match gen.generate_video_thumbnail(Path::new(&metadata.file_path), &metadata.id).await {
+                                    Ok(thumb_path) => {
+                                        // Update database with thumbnail path
+                                        if let Err(e) = self.db.update_thumbnail_path(&metadata.id, &thumb_path.to_string_lossy()).await {
+                                            warn!("Failed to update thumbnail path in database: {}", e);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to generate video thumbnail for {}: {}", metadata.file_path, e);
+                                    }
                                 }
                             }
                         }
 
-                        // Detect faces in images
-                        if let Some(ref detector) = self.face_detector {
-                            if metadata.media_type == crate::models::MediaType::Image {
+                        // Extract sub-images for album pages
+                        if metadata.media_type == crate::models::MediaType::Image {
+                            if let (Some(ref extractor), Some(ref output_dir)) = (&self.sub_image_extractor, &self.sub_image_output_dir) {
+                                match extractor.extract_sub_images(Path::new(&metadata.file_path), output_dir).await {
+                                    Ok(sub_images) => {
+                                        for (sub_image_path, extraction_metadata) in sub_images {
+                                            // Process each sub-image as a new media file
+                                            if let Ok(mut sub_metadata) = MetadataExtractor::extract(&sub_image_path).await {
+                                                // Copy parent metadata
+                                                sub_metadata.camera_info = metadata.camera_info.clone();
+                                                sub_metadata.timestamps.created = metadata.timestamps.created;
+                                                
+                                                // Set parent relationship
+                                                let extraction_json = serde_json::to_string(&extraction_metadata).ok();
+                                                
+                                                // Insert sub-image with parent reference
+                                                if let Err(e) = self.db.insert_sub_image(&sub_metadata, &metadata.id, extraction_json).await {
+                                                    warn!("Failed to insert sub-image: {}", e);
+                                                } else {
+                                                    // Run face detection on sub-image
+                                                    if let Some(ref detector) = self.face_detector {
+                                                        match detector.detect_faces(&sub_image_path, &sub_metadata.id).await {
+                                                            Ok(faces) => {
+                                                                for face in faces {
+                                                                    if let Err(e) = self.db.insert_face(&face).await {
+                                                                        warn!("Failed to insert face from sub-image: {}", e);
+                                                                    }
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                warn!("Failed to detect faces in sub-image: {}", e);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        debug!("No sub-images extracted from {}: {}", metadata.file_path, e);
+                                    }
+                                }
+                            }
+
+                            // Detect faces in main image
+                            if let Some(ref detector) = self.face_detector {
                                 match detector.detect_faces(Path::new(&metadata.file_path), &metadata.id).await {
                                     Ok(faces) => {
                                         let face_count = faces.len();

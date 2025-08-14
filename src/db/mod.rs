@@ -91,6 +91,76 @@ impl Database {
         Ok(())
     }
 
+    pub async fn insert_sub_image(&self, media: &MediaMetadata, parent_id: &str, extraction_metadata: Option<String>) -> Result<()> {
+        let media_type_str: String = media.media_type.clone().into();
+        let extra_json = media.extra.as_ref().map(|v| v.to_string());
+        
+        // Generate a unique index for this sub-image
+        let sub_image_index = sqlx::query_scalar::<_, i32>(
+            r#"
+            SELECT COALESCE(MAX(sub_image_index), -1) + 1
+            FROM media_files
+            WHERE parent_id = ?1
+            "#)
+        .bind(parent_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO media_files (
+                id, file_path, file_name, file_size, file_hash,
+                media_type, mime_type, width, height, duration_seconds,
+                bit_rate, camera_make, camera_model, lens_model,
+                focal_length, aperture, iso, shutter_speed, orientation,
+                codec, frame_rate, audio_channels, audio_sample_rate,
+                file_created_at, file_modified_at, indexed_at, last_scanned_at,
+                extra_metadata, parent_id, is_sub_image, sub_image_index, extraction_metadata
+            ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19,
+                ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28,
+                ?29, ?30, ?31, ?32
+            )
+            "#)
+        .bind(&media.id)
+        .bind(&media.file_path)
+        .bind(&media.file_name)
+        .bind(media.file_size)
+        .bind(&media.file_hash)
+        .bind(&media_type_str)
+        .bind(&media.mime_type)
+        .bind(media.dimensions.as_ref().map(|d| d.width as i32))
+        .bind(media.dimensions.as_ref().map(|d| d.height as i32))
+        .bind(media.duration_seconds)
+        .bind(media.codec_info.as_ref().and_then(|c| c.bit_rate))
+        .bind(media.camera_info.as_ref().and_then(|c| c.make.clone()))
+        .bind(media.camera_info.as_ref().and_then(|c| c.model.clone()))
+        .bind(media.camera_info.as_ref().and_then(|c| c.lens_model.clone()))
+        .bind(media.camera_info.as_ref().and_then(|c| c.focal_length))
+        .bind(media.camera_info.as_ref().and_then(|c| c.aperture))
+        .bind(media.camera_info.as_ref().and_then(|c| c.iso))
+        .bind(media.camera_info.as_ref().and_then(|c| c.shutter_speed.clone()))
+        .bind(media.camera_info.as_ref().and_then(|c| c.orientation))
+        .bind(media.codec_info.as_ref().map(|c| c.codec.clone()))
+        .bind(media.codec_info.as_ref().and_then(|c| c.frame_rate))
+        .bind(media.codec_info.as_ref().and_then(|c| c.audio_channels))
+        .bind(media.codec_info.as_ref().and_then(|c| c.audio_sample_rate))
+        .bind(media.timestamps.created)
+        .bind(media.timestamps.modified)
+        .bind(media.timestamps.indexed)
+        .bind(media.timestamps.last_scanned)
+        .bind(extra_json)
+        .bind(parent_id)
+        .bind(true) // is_sub_image
+        .bind(sub_image_index)
+        .bind(extraction_metadata)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn get_media_by_id(&self, id: &str) -> Result<Option<MediaFile>> {
         let media = sqlx::query_as::<_, MediaFile>(
             r#"
@@ -296,6 +366,62 @@ impl Database {
         Ok(())
     }
 
+    pub async fn get_sub_images(&self, parent_id: &str) -> Result<Vec<MediaFile>> {
+        let sub_images = sqlx::query_as::<_, MediaFile>(
+            r#"
+            SELECT * FROM media_files 
+            WHERE parent_id = ?1 AND is_sub_image = TRUE
+            ORDER BY sub_image_index
+            "#)
+        .bind(parent_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(sub_images)
+    }
+
+    pub async fn get_parent_image(&self, sub_image_id: &str) -> Result<Option<MediaFile>> {
+        let parent = sqlx::query_as::<_, MediaFile>(
+            r#"
+            SELECT parent.* 
+            FROM media_files parent
+            JOIN media_files child ON parent.id = child.parent_id
+            WHERE child.id = ?1 AND child.is_sub_image = TRUE
+            "#)
+        .bind(sub_image_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(parent)
+    }
+
+    pub async fn delete_sub_images(&self, parent_id: &str) -> Result<()> {
+        // First get all sub-images to delete their files
+        let sub_images = self.get_sub_images(parent_id).await?;
+        
+        // Delete files from filesystem
+        for sub_image in &sub_images {
+            let path = std::path::Path::new(&sub_image.file_path);
+            if path.exists() {
+                if let Err(e) = std::fs::remove_file(path) {
+                    tracing::warn!("Failed to delete sub-image file {}: {}", sub_image.file_path, e);
+                }
+            }
+        }
+        
+        // Delete from database
+        sqlx::query(
+            r#"
+            DELETE FROM media_files 
+            WHERE parent_id = ?1 AND is_sub_image = TRUE
+            "#)
+        .bind(parent_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn get_faces_for_media(&self, media_id: &str) -> Result<Vec<Face>> {
         let faces = sqlx::query_as::<_, Face>(
             r#"
@@ -306,6 +432,18 @@ impl Database {
         .await?;
 
         Ok(faces)
+    }
+    
+    pub async fn get_face_by_id(&self, face_id: &str) -> Result<Option<Face>> {
+        let face = sqlx::query_as::<_, Face>(
+            r#"
+            SELECT * FROM faces WHERE id = ?1
+            "#)
+        .bind(face_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(face)
     }
 
     pub async fn create_face_group(&self, group_name: Option<String>) -> Result<String> {

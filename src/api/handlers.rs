@@ -1,4 +1,5 @@
 use axum::{
+    body::Body,
     extract::{Multipart, Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
@@ -104,6 +105,33 @@ pub async fn search_media(
     }
 }
 
+pub async fn get_sub_images(
+    State(state): State<Arc<AppState>>,
+    Path(parent_id): Path<String>,
+) -> Result<Json<ApiResponse<Vec<MediaFile>>>, StatusCode> {
+    match state.db.get_sub_images(&parent_id).await {
+        Ok(sub_images) => Ok(Json(ApiResponse::success(sub_images))),
+        Err(e) => {
+            tracing::error!("Database error: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn get_parent_image(
+    State(state): State<Arc<AppState>>,
+    Path(sub_image_id): Path<String>,
+) -> Result<Json<ApiResponse<MediaFile>>, StatusCode> {
+    match state.db.get_parent_image(&sub_image_id).await {
+        Ok(Some(parent)) => Ok(Json(ApiResponse::success(parent))),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Database error: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 pub async fn get_image(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -130,6 +158,92 @@ pub async fn get_image(
         Ok(response) => Ok(response.into_response()),
         Err(e) => {
             tracing::error!("Failed to serve file: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn get_video(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Response, StatusCode> {
+    let media = match state.db.get_media_by_id(&id).await {
+        Ok(Some(m)) => m,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Database error: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    if !media.media_type.eq("video") {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let path = std::path::Path::new(&media.file_path);
+    if !path.exists() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Serve video with proper content type
+    let mime_type = mime_guess::from_path(path).first_or_octet_stream();
+    
+    match ServeFile::new(path).oneshot(axum::http::Request::new(())).await {
+        Ok(mut response) => {
+            // Ensure proper content type for video
+            response.headers_mut().insert(
+                axum::http::header::CONTENT_TYPE,
+                axum::http::HeaderValue::from_str(mime_type.as_ref()).unwrap_or_else(|_| {
+                    axum::http::HeaderValue::from_static("video/mp4")
+                }),
+            );
+            Ok(response.into_response())
+        }
+        Err(e) => {
+            tracing::error!("Failed to serve video file: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn get_audio(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Response, StatusCode> {
+    let media = match state.db.get_media_by_id(&id).await {
+        Ok(Some(m)) => m,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Database error: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    if !media.media_type.eq("audio") {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let path = std::path::Path::new(&media.file_path);
+    if !path.exists() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Serve audio with proper content type
+    let mime_type = mime_guess::from_path(path).first_or_octet_stream();
+    
+    match ServeFile::new(path).oneshot(axum::http::Request::new(())).await {
+        Ok(mut response) => {
+            // Ensure proper content type for audio
+            response.headers_mut().insert(
+                axum::http::header::CONTENT_TYPE,
+                axum::http::HeaderValue::from_str(mime_type.as_ref()).unwrap_or_else(|_| {
+                    axum::http::HeaderValue::from_static("audio/mpeg")
+                }),
+            );
+            Ok(response.into_response())
+        }
+        Err(e) => {
+            tracing::error!("Failed to serve audio file: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -197,6 +311,103 @@ pub async fn health_check() -> impl IntoResponse {
         "service": "medianator",
         "version": env!("CARGO_PKG_VERSION"),
     }))
+}
+
+pub async fn get_face_thumbnail(
+    State(state): State<Arc<AppState>>,
+    Path(face_id): Path<String>,
+) -> Result<Response, StatusCode> {
+    // Get the face from database
+    let face = match state.db.get_face_by_id(&face_id).await {
+        Ok(Some(f)) => f,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Database error: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    // Get the media file
+    let media = match state.db.get_media_by_id(&face.media_file_id).await {
+        Ok(Some(m)) => m,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Database error: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    // Parse face bounding box
+    let bbox_parts: Vec<i32> = face.face_bbox
+        .split(',')
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    
+    if bbox_parts.len() != 4 {
+        tracing::error!("Invalid face bbox: {}", face.face_bbox);
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+    
+    let (x, y, width, height) = (bbox_parts[0], bbox_parts[1], bbox_parts[2], bbox_parts[3]);
+    
+    // Load the image and extract face region
+    let image_path = std::path::Path::new(&media.file_path);
+    if !image_path.exists() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    
+    match extract_face_thumbnail(image_path, x, y, width, height).await {
+        Ok(thumbnail_bytes) => {
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "image/jpeg")
+                .header("Cache-Control", "public, max-age=3600")
+                .body(Body::from(thumbnail_bytes))
+                .unwrap())
+        }
+        Err(e) => {
+            tracing::error!("Failed to extract face thumbnail: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn extract_face_thumbnail(
+    image_path: &std::path::Path,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    use image::{imageops, DynamicImage};
+    
+    let img = image::open(image_path)?;
+    
+    // Ensure coordinates are within bounds
+    let x = x.max(0) as u32;
+    let y = y.max(0) as u32;
+    let width = width.max(1) as u32;
+    let height = height.max(1) as u32;
+    
+    let img_width = img.width();
+    let img_height = img.height();
+    
+    let x = x.min(img_width.saturating_sub(1));
+    let y = y.min(img_height.saturating_sub(1));
+    let width = width.min(img_width - x);
+    let height = height.min(img_height - y);
+    
+    // Crop the face region
+    let face_img = img.crop_imm(x, y, width, height);
+    
+    // Resize to thumbnail (150x150)
+    let thumbnail = face_img.resize(150, 150, imageops::FilterType::Lanczos3);
+    
+    // Convert to JPEG bytes
+    let mut bytes = Vec::new();
+    thumbnail.write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Jpeg)?;
+    
+    Ok(bytes)
 }
 
 pub async fn get_thumbnail(
@@ -431,9 +642,64 @@ pub async fn reprocess_media(
             }
         }
         
-        // Re-run face detection if enabled
-        if let Some(ref detector) = scanner.face_detector {
-            if media.media_type == "image" {
+        // Extract sub-images if configured and it's an image
+        if media.media_type == "image" {
+            if let (Some(ref extractor), Some(ref output_dir)) = (&scanner.sub_image_extractor, &scanner.sub_image_output_dir) {
+                tracing::info!("Checking for sub-images in {}", file_path);
+                
+                // Delete existing sub-images for this parent
+                if let Err(e) = db.delete_sub_images(&media_id).await {
+                    tracing::warn!("Failed to delete old sub-images: {}", e);
+                }
+                
+                match extractor.extract_sub_images(std::path::Path::new(&file_path), output_dir).await {
+                    Ok(sub_images) => {
+                        tracing::info!("Extracted {} sub-images from {}", sub_images.len(), file_path);
+                        for (sub_image_path, extraction_metadata) in sub_images {
+                            // Process each sub-image as a new media file
+                            if let Ok(mut sub_metadata) = crate::scanner::metadata::MetadataExtractor::extract(&sub_image_path).await {
+                                // Copy parent metadata
+                                if let Ok(parent_metadata) = crate::scanner::metadata::MetadataExtractor::extract(
+                                    std::path::Path::new(&file_path)
+                                ).await {
+                                    sub_metadata.camera_info = parent_metadata.camera_info.clone();
+                                    sub_metadata.timestamps.created = parent_metadata.timestamps.created;
+                                }
+                                
+                                // Set parent relationship
+                                let extraction_json = serde_json::to_string(&extraction_metadata).ok();
+                                
+                                // Insert sub-image with parent reference
+                                if let Err(e) = db.insert_sub_image(&sub_metadata, &media_id, extraction_json).await {
+                                    tracing::warn!("Failed to insert sub-image: {}", e);
+                                } else {
+                                    // Run face detection on sub-image
+                                    if let Some(ref detector) = scanner.face_detector {
+                                        match detector.detect_faces(&sub_image_path, &sub_metadata.id).await {
+                                            Ok(faces) => {
+                                                for face in faces {
+                                                    if let Err(e) = db.insert_face(&face).await {
+                                                        tracing::warn!("Failed to insert face from sub-image: {}", e);
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!("Failed to detect faces in sub-image: {}", e);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!("No sub-images extracted from {}: {}", file_path, e);
+                    }
+                }
+            }
+            
+            // Re-run face detection if enabled
+            if let Some(ref detector) = scanner.face_detector {
                 // First, delete existing faces for this media
                 if let Err(e) = db.delete_faces_for_media(&media_id).await {
                     tracing::warn!("Failed to delete old faces: {}", e);
@@ -467,18 +733,34 @@ pub async fn reprocess_media(
         // Re-generate thumbnail if configured
         if let Some(ref gen) = scanner.thumbnail_generator {
             if media.media_type == "image" {
-                if let Err(e) = gen.generate_thumbnail(
+                match gen.generate_thumbnail(
                     std::path::Path::new(&file_path), 
                     &media_id
                 ).await {
-                    tracing::warn!("Failed to regenerate thumbnail: {}", e);
+                    Ok(thumb_path) => {
+                        // Update database with thumbnail path
+                        if let Err(e) = db.update_thumbnail_path(&media_id, &thumb_path.to_string_lossy()).await {
+                            tracing::warn!("Failed to update thumbnail path in database: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to regenerate thumbnail: {}", e);
+                    }
                 }
             } else if media.media_type == "video" {
-                if let Err(e) = gen.generate_video_thumbnail(
+                match gen.generate_video_thumbnail(
                     std::path::Path::new(&file_path),
                     &media_id
                 ).await {
-                    tracing::warn!("Failed to regenerate video thumbnail: {}", e);
+                    Ok(thumb_path) => {
+                        // Update database with thumbnail path
+                        if let Err(e) = db.update_thumbnail_path(&media_id, &thumb_path.to_string_lossy()).await {
+                            tracing::warn!("Failed to update thumbnail path in database: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to regenerate video thumbnail: {}", e);
+                    }
                 }
             }
         }

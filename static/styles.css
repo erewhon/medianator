@@ -402,6 +402,7 @@ h2 {
     border-radius: 10px;
     padding: 20px;
     min-height: 400px;
+    position: relative; /* Added for face overlay positioning */
 }
 
 .media-viewer img,
@@ -409,6 +410,7 @@ h2 {
     max-width: 100%;
     max-height: 500px;
     border-radius: 10px;
+    display: block; /* Ensures proper dimensions */
 }
 
 .media-info h3 {
@@ -720,4 +722,92 @@ h2 {
 .modal-content.large {
     max-width: 900px;
     width: 90%;
+}
+
+/* Enhanced Face Detection Styles */
+.face-item {
+    cursor: pointer;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.face-item:hover {
+    background: #f5f5f5;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.face-thumbnail-container {
+    width: 150px;
+    height: 150px;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #f8f9fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.face-thumbnail {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.face-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 8px;
+    width: 100%;
+}
+
+.face-filename {
+    font-size: 12px;
+    color: #666;
+    text-align: center;
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.toggle-faces-btn {
+    margin-left: 10px;
+    padding: 4px 12px;
+    background: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s;
+}
+
+.toggle-faces-btn:hover {
+    background: #1976D2;
+}
+
+.face-boxes-overlay {
+    z-index: 10;
+}
+
+.face-box {
+    transition: all 0.3s;
+}
+
+.face-box:hover {
+    border-color: #ffff00 !important;
+    box-shadow: 0 0 8px rgba(255,255,0,0.8) !important;
+}
+
+.face-label {
+    white-space: nowrap;
 }

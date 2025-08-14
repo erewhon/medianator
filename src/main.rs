@@ -36,6 +36,12 @@ async fn main() -> Result<()> {
         info!("Thumbnail generation enabled");
     }
     
+    // Enable sub-image extraction if configured
+    if let Ok(sub_images_dir) = std::env::var("SUB_IMAGES_DIR") {
+        scanner = scanner.with_sub_image_extraction(std::path::PathBuf::from(sub_images_dir));
+        info!("Sub-image extraction enabled");
+    }
+    
     // Enable face detection if configured
     if std::env::var("ENABLE_FACE_DETECTION").unwrap_or_default() == "true" {
         // Check if OpenCV should be used (default to true)
@@ -53,6 +59,9 @@ async fn main() -> Result<()> {
                 MediaScanner::new(db.clone())
                     .with_thumbnail_generator(std::path::PathBuf::from(
                         std::env::var("THUMBNAILS_DIR").unwrap_or_default()
+                    ))
+                    .with_sub_image_extraction(std::path::PathBuf::from(
+                        std::env::var("SUB_IMAGES_DIR").unwrap_or_default()
                     ))
             }
         };
