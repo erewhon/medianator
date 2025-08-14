@@ -8,6 +8,12 @@
 </head>
 <body>
     <div class="container">
+        <!-- Navigation Bar -->
+        <nav class="nav-bar" style="background: white; padding: 15px 30px; border-radius: 15px; margin-bottom: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; gap: 20px; align-items: center;">
+            <a href="/" class="nav-link" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; padding: 8px 16px; border-radius: 20px;">📸 Gallery</a>
+            <a href="/stories.html" class="nav-link" style="color: #666; text-decoration: none; padding: 8px 16px; border-radius: 20px; transition: background 0.3s;">📚 Stories</a>
+        </nav>
+        
         <header>
             <h1>📸 Medianator</h1>
             <p>Media Catalog Engine</p>
@@ -135,6 +141,20 @@
                                 <span id="parent-filename"></span>
                             </a>
                         </div>
+                    </div>
+                    
+                    <!-- Edit Media Info -->
+                    <div class="edit-media-info">
+                        <h4>✏️ Edit Information</h4>
+                        <div class="form-group">
+                            <label for="media-user-description">Description</label>
+                            <textarea id="media-user-description" rows="3" placeholder="Add your description..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="media-user-tags">Tags (comma-separated)</label>
+                            <input type="text" id="media-user-tags" placeholder="vacation, family, 2024">
+                        </div>
+                        <button id="save-media-info-btn" class="primary-btn">Save Changes</button>
                     </div>
                     
                     <!-- Conversion Controls -->
@@ -268,6 +288,7 @@
                     
                     <div class="media-actions">
                         <button id="reprocess-single-btn" class="action-btn">🔄 Reprocess This File</button>
+                        <button id="add-to-story-btn" class="action-btn">📚 Add to Story</button>
                     </div>
                 </div>
             </div>
@@ -324,6 +345,82 @@
             <h2>Face Groups</h2>
             <div id="face-groups-container" class="face-groups-container">
                 <!-- Face groups will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Stories Modal -->
+    <div id="stories-modal" class="modal hidden">
+        <div class="modal-content large">
+            <span class="close" id="close-stories-modal">&times;</span>
+            <h2>📚 Stories</h2>
+            <div class="stories-header">
+                <button id="create-story-btn" class="primary-btn">+ Create New Story</button>
+            </div>
+            <div id="stories-list" class="stories-list">
+                <!-- Stories will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Story Modal -->
+    <div id="create-story-modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close" id="close-create-story-modal">&times;</span>
+            <h2>Create New Story</h2>
+            <form id="create-story-form">
+                <div class="form-group">
+                    <label for="story-name">Story Name *</label>
+                    <input type="text" id="story-name" required placeholder="Enter story name">
+                </div>
+                <div class="form-group">
+                    <label for="story-description">Description</label>
+                    <textarea id="story-description" rows="4" placeholder="Enter story description"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="submit" class="primary-btn">Create Story</button>
+                    <button type="button" id="cancel-create-story" class="secondary-btn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add to Story Modal -->
+    <div id="add-to-story-modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close" id="close-add-to-story-modal">&times;</span>
+            <h2>Add to Story</h2>
+            <div class="form-group">
+                <label for="select-story">Select Story</label>
+                <select id="select-story">
+                    <option value="">Choose a story...</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="item-caption">Caption (optional)</label>
+                <input type="text" id="item-caption" placeholder="Add a caption for this item">
+            </div>
+            <div class="modal-actions">
+                <button id="confirm-add-to-story" class="primary-btn">Add to Story</button>
+                <button id="cancel-add-to-story" class="secondary-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Story View Modal -->
+    <div id="story-view-modal" class="modal hidden">
+        <div class="modal-content large">
+            <span class="close" id="close-story-view-modal">&times;</span>
+            <div class="story-header">
+                <h2 id="story-view-name"></h2>
+                <p id="story-view-description"></p>
+                <div class="story-actions">
+                    <button id="edit-story-btn" class="action-btn">✏️ Edit</button>
+                    <button id="delete-story-btn" class="action-btn danger">🗑️ Delete</button>
+                </div>
+            </div>
+            <div id="story-items" class="story-items">
+                <!-- Story items will be loaded here -->
             </div>
         </div>
     </div>

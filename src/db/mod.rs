@@ -1,11 +1,13 @@
 mod face_grouping;
 mod groups_albums;
+mod stories;
 
 use anyhow::Result;
 use sqlx::{migrate::MigrateDatabase, Pool, Sqlite, SqlitePool};
 use tracing::info;
 
-use crate::models::{MediaFile, MediaMetadata, ScanHistory, Face, FaceGroup};
+use crate::models::{MediaFile, MediaMetadata, ScanHistory, Face, FaceGroup, Story, StoryWithItems};
+pub use stories::StoryDatabase;
 
 #[derive(Clone)]
 pub struct Database {
@@ -26,6 +28,10 @@ impl Database {
             .await?;
 
         Ok(Self { pool })
+    }
+    
+    pub fn get_pool(&self) -> SqlitePool {
+        self.pool.clone()
     }
 
     pub async fn insert_media_file(&self, media: &MediaMetadata) -> Result<()> {
@@ -178,6 +184,22 @@ impl Database {
             r#"
             DELETE FROM media_files WHERE id = ?1
             "#)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        
+        Ok(())
+    }
+    
+    pub async fn update_media_metadata(&self, id: &str, user_description: Option<String>, user_tags: Option<String>) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE media_files 
+            SET user_description = ?1, user_tags = ?2
+            WHERE id = ?3
+            "#)
+        .bind(user_description)
+        .bind(user_tags)
         .bind(id)
         .execute(&self.pool)
         .await?;
@@ -624,9 +646,5 @@ impl Database {
         }
         
         Ok(result)
-    }
-
-    pub fn get_pool(&self) -> Pool<Sqlite> {
-        self.pool.clone()
     }
 }

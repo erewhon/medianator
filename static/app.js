@@ -220,6 +220,11 @@ async function showMediaDetail(mediaId) {
                 parentInfo.classList.add('hidden');
             }
             
+            // Load user description and tags
+            document.getElementById('media-user-description').value = media.user_description || '';
+            document.getElementById('media-user-tags').value = media.user_tags ? 
+                JSON.parse(media.user_tags).join(', ') : '';
+            
             // Show/hide conversion controls based on media type
             const imageConversion = document.getElementById('image-conversion');
             const videoConversion = document.getElementById('video-conversion');
@@ -347,6 +352,51 @@ async function showMediaDetail(mediaId) {
     }
 }
 
+// Save media info
+async function saveMediaInfo() {
+    const panel = document.getElementById('media-panel');
+    const mediaId = panel.dataset.currentMediaId;
+    
+    if (!mediaId) return;
+    
+    const description = document.getElementById('media-user-description').value;
+    const tagsInput = document.getElementById('media-user-tags').value;
+    const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
+    
+    try {
+        const response = await fetch(`/api/media/${mediaId}/metadata`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_description: description,
+                user_tags: JSON.stringify(tags)
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Show success feedback
+            const btn = document.getElementById('save-media-info-btn');
+            const originalText = btn.textContent;
+            btn.textContent = '✓ Saved!';
+            btn.style.background = '#28a745';
+            
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = '';
+            }, 2000);
+        } else {
+            alert('Error saving: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error saving media info:', error);
+        alert('Failed to save changes');
+    }
+}
+
 // Close panel function
 function closePanel() {
     const panel = document.getElementById('media-panel');
@@ -411,20 +461,55 @@ function setupEventListeners() {
     // Archive selected duplicates
     document.getElementById('archive-selected-duplicates').addEventListener('click', archiveDuplicates);
     
+    // Stories
+    document.getElementById('stories-btn').addEventListener('click', showStories);
+    document.getElementById('create-story-btn').addEventListener('click', () => {
+        document.getElementById('create-story-modal').classList.remove('hidden');
+    });
+    document.getElementById('create-story-form').addEventListener('submit', createStory);
+    document.getElementById('cancel-create-story').addEventListener('click', () => {
+        document.getElementById('create-story-modal').classList.add('hidden');
+    });
+    document.getElementById('add-to-story-btn').addEventListener('click', showAddToStory);
+    document.getElementById('confirm-add-to-story').addEventListener('click', addToStory);
+    document.getElementById('cancel-add-to-story').addEventListener('click', () => {
+        document.getElementById('add-to-story-modal').classList.add('hidden');
+    });
+    
     // Panel close
     document.getElementById('close-panel').addEventListener('click', closePanel);
     document.getElementById('panel-overlay').addEventListener('click', closePanel);
+    
+    // Save media info
+    document.getElementById('save-media-info-btn').addEventListener('click', saveMediaInfo);
     
     // Conversion buttons
     document.getElementById('convert-image-btn').addEventListener('click', () => convertMedia('image'));
     document.getElementById('convert-video-btn').addEventListener('click', () => convertMedia('video'));
     document.getElementById('convert-audio-btn').addEventListener('click', () => convertMedia('audio'));
     
-    // Modal close buttons
+    // Modal close buttons - specific handlers for each modal
     document.querySelectorAll('.modal .close').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.target.closest('.modal').classList.add('hidden');
         });
+    });
+    
+    // Additional close handlers for story modals
+    const closeHandlers = [
+        ['close-stories-modal', 'stories-modal'],
+        ['close-create-story-modal', 'create-story-modal'],
+        ['close-add-to-story-modal', 'add-to-story-modal'],
+        ['close-story-view-modal', 'story-view-modal']
+    ];
+    
+    closeHandlers.forEach(([btnId, modalId]) => {
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            btn.addEventListener('click', () => {
+                document.getElementById(modalId).classList.add('hidden');
+            });
+        }
     });
     
     // Close modal on outside click
@@ -763,6 +848,236 @@ function updatePagination(itemCount) {
     prevBtn.disabled = currentPage === 1;
     nextBtn.disabled = currentPage >= totalPages || itemCount < pageSize;
     pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+}
+
+// Show stories modal
+async function showStories() {
+    const modal = document.getElementById('stories-modal');
+    modal.classList.remove('hidden');
+    await loadStories();
+}
+
+// Load stories
+async function loadStories() {
+    try {
+        const response = await fetch('/api/stories');
+        const data = await response.json();
+        
+        if (data.success) {
+            const storiesList = document.getElementById('stories-list');
+            
+            if (data.data.length === 0) {
+                storiesList.innerHTML = '<p style="text-align: center; color: #666;">No stories yet. Create your first story!</p>';
+            } else {
+                storiesList.innerHTML = data.data.map(story => `
+                    <div class="story-card" data-story-id="${story.id}">
+                        <h3>${story.name}</h3>
+                        <p>${story.description || 'No description'}</p>
+                        <div class="story-meta">
+                            <span>${story.item_count || 0} items</span>
+                            <span>${formatDate(story.created_at)}</span>
+                        </div>
+                    </div>
+                `).join('');
+                
+                // Add click handlers
+                document.querySelectorAll('.story-card').forEach(card => {
+                    card.addEventListener('click', () => viewStory(card.dataset.storyId));
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Error loading stories:', error);
+    }
+}
+
+// Create story
+async function createStory(e) {
+    e.preventDefault();
+    
+    const name = document.getElementById('story-name').value;
+    const description = document.getElementById('story-description').value;
+    
+    try {
+        const response = await fetch('/api/stories', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ name, description })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('create-story-modal').classList.add('hidden');
+            document.getElementById('create-story-form').reset();
+            await loadStories();
+        } else {
+            alert('Error creating story: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error creating story:', error);
+        alert('Failed to create story');
+    }
+}
+
+// View story
+async function viewStory(storyId) {
+    try {
+        const response = await fetch(`/api/stories/${storyId}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            const story = data.data;
+            document.getElementById('story-view-name').textContent = story.story.name;
+            document.getElementById('story-view-description').textContent = story.story.description || '';
+            
+            const itemsDiv = document.getElementById('story-items');
+            if (story.items.length === 0) {
+                itemsDiv.innerHTML = '<p style="text-align: center; color: #666;">No items in this story yet.</p>';
+            } else {
+                itemsDiv.innerHTML = story.items.map(item => {
+                    let mediaContent = '';
+                    if (item.media_type === 'image') {
+                        mediaContent = `<img src="/api/media/${item.id}/image" alt="${item.file_name}">`;
+                    } else if (item.media_type === 'video') {
+                        mediaContent = `<video src="/api/media/${item.id}/video" controls></video>`;
+                    } else if (item.media_type === 'audio') {
+                        mediaContent = `<div style="padding: 50px 10px; text-align: center;">🎵<br>${item.file_name}</div>`;
+                    }
+                    
+                    return `
+                        <div class="story-item" data-item-id="${item.id}">
+                            ${mediaContent}
+                            <div class="item-caption">${item.caption || item.file_name}</div>
+                            <button class="remove-item" data-story-id="${storyId}" data-media-id="${item.id}">×</button>
+                        </div>
+                    `;
+                }).join('');
+                
+                // Add remove handlers
+                document.querySelectorAll('.remove-item').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        removeFromStory(btn.dataset.storyId, btn.dataset.mediaId);
+                    });
+                });
+            }
+            
+            // Set up story action buttons
+            document.getElementById('delete-story-btn').onclick = () => deleteStory(storyId);
+            
+            document.getElementById('story-view-modal').classList.remove('hidden');
+        }
+    } catch (error) {
+        console.error('Error viewing story:', error);
+    }
+}
+
+// Show add to story modal
+async function showAddToStory() {
+    const panel = document.getElementById('media-panel');
+    const mediaId = panel.dataset.currentMediaId;
+    
+    if (!mediaId) return;
+    
+    try {
+        const response = await fetch('/api/stories');
+        const data = await response.json();
+        
+        if (data.success) {
+            const select = document.getElementById('select-story');
+            select.innerHTML = '<option value="">Choose a story...</option>' + 
+                data.data.map(story => `<option value="${story.id}">${story.name}</option>`).join('');
+            
+            document.getElementById('add-to-story-modal').classList.remove('hidden');
+        }
+    } catch (error) {
+        console.error('Error loading stories:', error);
+    }
+}
+
+// Add to story
+async function addToStory() {
+    const panel = document.getElementById('media-panel');
+    const mediaId = panel.dataset.currentMediaId;
+    const storyId = document.getElementById('select-story').value;
+    const caption = document.getElementById('item-caption').value;
+    
+    if (!storyId) {
+        alert('Please select a story');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/stories/${storyId}/items`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                media_file_id: mediaId,
+                caption
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('add-to-story-modal').classList.add('hidden');
+            document.getElementById('item-caption').value = '';
+            alert('Added to story successfully!');
+        } else {
+            alert('Error adding to story: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error adding to story:', error);
+        alert('Failed to add to story');
+    }
+}
+
+// Remove from story
+async function removeFromStory(storyId, mediaId) {
+    if (!confirm('Remove this item from the story?')) return;
+    
+    try {
+        const response = await fetch(`/api/stories/${storyId}/items/${mediaId}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            await viewStory(storyId);
+        } else {
+            alert('Error removing item: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error removing item:', error);
+    }
+}
+
+// Delete story
+async function deleteStory(storyId) {
+    if (!confirm('Are you sure you want to delete this story? This cannot be undone.')) return;
+    
+    try {
+        const response = await fetch(`/api/stories/${storyId}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('story-view-modal').classList.add('hidden');
+            await loadStories();
+        } else {
+            alert('Error deleting story: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error deleting story:', error);
+    }
 }
 
 // Utility functions

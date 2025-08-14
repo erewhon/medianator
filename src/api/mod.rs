@@ -2,7 +2,7 @@ pub mod handlers;
 pub mod metrics;
 
 use axum::{
-    routing::{get, post},
+    routing::{get, post, put, delete},
     Router,
 };
 use std::sync::Arc;
@@ -33,6 +33,7 @@ pub fn create_app(db: Database, scanner: MediaScanner) -> Router {
         .route("/api/media", get(handlers::list_media))
         .route("/api/media/search", get(handlers::search_media))
         .route("/api/media/:id", get(handlers::get_media_by_id))
+        .route("/api/media/:id/metadata", put(handlers::update_media_metadata))
         .route("/api/media/:id/image", get(handlers::get_image))
         .route("/api/media/:id/video", get(handlers::get_video))
         .route("/api/media/:id/audio", get(handlers::get_audio))
@@ -67,6 +68,13 @@ pub fn create_app(db: Database, scanner: MediaScanner) -> Router {
         .route("/api/albums/:id", get(handlers::get_smart_album))
         .route("/api/albums/:id/media", get(handlers::get_smart_album_media))
         .route("/api/albums/:id/refresh", post(handlers::refresh_smart_album))
+        // Stories endpoints
+        .route("/api/stories", get(handlers::get_stories))
+        .route("/api/stories", post(handlers::create_story))
+        .route("/api/stories/:id", get(handlers::get_story))
+        .route("/api/stories/:id", delete(handlers::delete_story))
+        .route("/api/stories/:id/items", post(handlers::add_story_item))
+        .route("/api/stories/:story_id/items/:media_id", delete(handlers::remove_story_item))
         .route("/metrics", get(metrics::metrics_handler))
         .fallback_service(ServeDir::new("static").append_index_html_on_directories(true))
         .layer(MetricsMiddleware::new())

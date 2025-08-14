@@ -11,7 +11,7 @@ use tokio::fs;
 use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
-use crate::db::Database;
+use crate::db::{Database, StoryDatabase};
 use crate::models::{MediaFile, Face, FaceGroup, DuplicateGroup, MediaGroup, MediaGroupWithItems, SmartAlbum, SmartAlbumFilter};
 use crate::scanner::{MediaScanner, ScanStats, duplicate::DuplicateDetector};
 
@@ -1258,6 +1258,131 @@ pub async fn refresh_smart_album(
         Ok(()) => Ok(Json(ApiResponse::success(()))),
         Err(e) => {
             tracing::error!("Failed to refresh smart album: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// Media metadata update
+#[derive(Debug, Deserialize)]
+pub struct UpdateMediaMetadataRequest {
+    pub user_description: Option<String>,
+    pub user_tags: Option<String>,
+}
+
+pub async fn update_media_metadata(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(request): Json<UpdateMediaMetadataRequest>,
+) -> Result<Json<ApiResponse<()>>, StatusCode> {
+    match state.db.update_media_metadata(&id, request.user_description, request.user_tags).await {
+        Ok(()) => Ok(Json(ApiResponse::success(()))),
+        Err(e) => {
+            tracing::error!("Failed to update media metadata: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// Story handlers
+#[derive(Debug, Deserialize)]
+pub struct CreateStoryRequest {
+    pub name: String,
+    pub description: Option<String>,
+}
+
+pub async fn create_story(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<CreateStoryRequest>,
+) -> Result<Json<ApiResponse<crate::models::Story>>, StatusCode> {
+    let story_db = StoryDatabase::new(state.db.get_pool());
+    
+    match story_db.create_story(&request.name, request.description.as_deref()).await {
+        Ok(story) => Ok(Json(ApiResponse::success(story))),
+        Err(e) => {
+            tracing::error!("Failed to create story: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn get_stories(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ApiResponse<Vec<crate::models::Story>>>, StatusCode> {
+    let story_db = StoryDatabase::new(state.db.get_pool());
+    
+    match story_db.get_all_stories().await {
+        Ok(stories) => Ok(Json(ApiResponse::success(stories))),
+        Err(e) => {
+            tracing::error!("Failed to get stories: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn get_story(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<crate::models::StoryWithItems>>, StatusCode> {
+    let story_db = StoryDatabase::new(state.db.get_pool());
+    
+    match story_db.get_story_with_items(&id).await {
+        Ok(Some(story)) => Ok(Json(ApiResponse::success(story))),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Failed to get story: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn delete_story(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<()>>, StatusCode> {
+    let story_db = StoryDatabase::new(state.db.get_pool());
+    
+    match story_db.delete_story(&id).await {
+        Ok(()) => Ok(Json(ApiResponse::success(()))),
+        Err(e) => {
+            tracing::error!("Failed to delete story: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddStoryItemRequest {
+    pub media_file_id: String,
+    pub caption: Option<String>,
+}
+
+pub async fn add_story_item(
+    State(state): State<Arc<AppState>>,
+    Path(story_id): Path<String>,
+    Json(request): Json<AddStoryItemRequest>,
+) -> Result<Json<ApiResponse<()>>, StatusCode> {
+    let story_db = StoryDatabase::new(state.db.get_pool());
+    
+    match story_db.add_item_to_story(&story_id, &request.media_file_id, request.caption.as_deref()).await {
+        Ok(()) => Ok(Json(ApiResponse::success(()))),
+        Err(e) => {
+            tracing::error!("Failed to add item to story: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn remove_story_item(
+    State(state): State<Arc<AppState>>,
+    Path((story_id, media_id)): Path<(String, String)>,
+) -> Result<Json<ApiResponse<()>>, StatusCode> {
+    let story_db = StoryDatabase::new(state.db.get_pool());
+    
+    match story_db.remove_item_from_story(&story_id, &media_id).await {
+        Ok(()) => Ok(Json(ApiResponse::success(()))),
+        Err(e) => {
+            tracing::error!("Failed to remove item from story: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

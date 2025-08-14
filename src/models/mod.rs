@@ -83,6 +83,10 @@ pub struct MediaFile {
     pub date_taken: Option<DateTime<Utc>>,
     
     pub extra_metadata: Option<String>,
+    
+    // User-editable fields
+    pub user_description: Option<String>,
+    pub user_tags: Option<String>, // JSON array of tags
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,6 +198,33 @@ pub struct DuplicateFile {
     pub path: String,
     pub size: i64,
     pub modified_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Story {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub cover_image_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct StoryItem {
+    pub id: i32,
+    pub story_id: String,
+    pub media_file_id: String,
+    pub position: i32,
+    pub caption: Option<String>,
+    pub added_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoryWithItems {
+    pub story: Story,
+    pub items: Vec<MediaFile>,
+    pub item_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
