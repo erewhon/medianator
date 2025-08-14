@@ -1,8 +1,9 @@
 // Global state
-let currentPage = 0;
+let currentPage = 1;
 const pageSize = 20;
 let currentFilter = '';
 let currentSearch = '';
+let totalPages = 1;
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
@@ -47,7 +48,7 @@ async function loadGallery() {
     try {
         const params = new URLSearchParams({
             limit: pageSize,
-            offset: currentPage * pageSize
+            offset: (currentPage - 1) * pageSize
         });
         
         if (currentFilter) {
@@ -56,7 +57,7 @@ async function loadGallery() {
         
         let url = '/api/media?' + params;
         if (currentSearch) {
-            url = `/api/media/search?q=${encodeURIComponent(currentSearch)}`;
+            url = `/api/media/search?q=${encodeURIComponent(currentSearch)}&limit=${pageSize}&offset=${(currentPage - 1) * pageSize}`;
         }
         
         const response = await fetch(url);
@@ -64,6 +65,8 @@ async function loadGallery() {
         
         if (data.success) {
             displayMedia(data.data);
+            // Fetch total count for proper pagination
+            await updateTotalCount();
             updatePagination(data.data.length);
         }
     } catch (error) {
@@ -85,13 +88,25 @@ function displayMedia(items) {
     }
     
     gallery.innerHTML = items.map(item => {
-        const thumbnail = item.thumbnail_path ? `/api/media/${item.id}/thumbnail` : getPlaceholderIcon(item.media_type);
+        // Determine the appropriate image source
+        let imageSrc;
+        let useImg = false;
+        
+        if (item.media_type === 'image') {
+            // For images, prefer thumbnail if available, otherwise use the image itself
+            imageSrc = item.thumbnail_path ? `/api/media/${item.id}/thumbnail` : `/api/media/${item.id}/image`;
+            useImg = true;
+        } else if (item.thumbnail_path) {
+            // For videos/audio with thumbnails
+            imageSrc = `/api/media/${item.id}/thumbnail`;
+            useImg = true;
+        }
         
         if (isGridView) {
             return `
                 <div class="media-item gallery-item" data-id="${item.id}" data-media-id="${item.id}">
-                    ${item.thumbnail_path || item.media_type === 'image' ? 
-                        `<img src="${item.media_type === 'image' ? `/api/media/${item.id}/image` : thumbnail}" alt="${item.file_name}" class="media-thumbnail">` :
+                    ${useImg ? 
+                        `<img src="${imageSrc}" alt="${item.file_name}" class="media-thumbnail" loading="lazy">` :
                         `<div class="media-thumbnail" style="display: flex; align-items: center; justify-content: center; background: #f8f9fa; font-size: 3em;">${getMediaEmoji(item.media_type)}</div>`
                     }
                     <div class="media-overlay">
@@ -102,8 +117,8 @@ function displayMedia(items) {
         } else {
             return `
                 <div class="media-item gallery-item" data-id="${item.id}" data-media-id="${item.id}">
-                    ${item.thumbnail_path || item.media_type === 'image' ? 
-                        `<img src="${item.media_type === 'image' ? `/api/media/${item.id}/image` : thumbnail}" alt="${item.file_name}" class="media-thumbnail">` :
+                    ${useImg ? 
+                        `<img src="${imageSrc}" alt="${item.file_name}" class="media-thumbnail" loading="lazy">` :
                         `<div class="media-thumbnail" style="display: flex; align-items: center; justify-content: center; background: #f8f9fa;">${getMediaEmoji(item.media_type)}</div>`
                     }
                     <div class="media-details">
@@ -123,9 +138,39 @@ function displayMedia(items) {
     document.querySelectorAll('.media-item').forEach(item => {
         item.addEventListener('click', () => showMediaDetail(item.dataset.id));
     });
+    
+    // Add error handlers for images
+    document.querySelectorAll('.media-thumbnail').forEach(img => {
+        if (img.tagName === 'IMG') {
+            img.onerror = function() {
+                // Replace with placeholder on error
+                const parent = this.parentElement;
+                const mediaType = parent.querySelector('.media-type-badge')?.textContent || 'image';
+                this.style.display = 'none';
+                const placeholder = document.createElement('div');
+                placeholder.className = 'media-thumbnail';
+                placeholder.style.cssText = 'display: flex; align-items: center; justify-content: center; background: #f8f9fa; font-size: 3em;';
+                placeholder.textContent = getMediaEmoji(mediaType);
+                parent.insertBefore(placeholder, this);
+            };
+        }
+    });
 }
 
-// Show media detail modal
+// Update total count for pagination
+async function updateTotalCount() {
+    try {
+        const stats = await fetch('/api/stats').then(r => r.json());
+        if (stats.success) {
+            const totalFiles = stats.data.total_files || 0;
+            totalPages = Math.max(1, Math.ceil(totalFiles / pageSize));
+        }
+    } catch (error) {
+        console.error('Error fetching total count:', error);
+    }
+}
+
+// Show media detail panel
 async function showMediaDetail(mediaId) {
     try {
         const [mediaRes, facesRes] = await Promise.all([
@@ -138,8 +183,9 @@ async function showMediaDetail(mediaId) {
         
         if (mediaData.success) {
             const media = mediaData.data;
-            const modal = document.getElementById('media-modal');
-            modal.dataset.currentMediaId = mediaId;
+            const panel = document.getElementById('media-panel');
+            const overlay = document.getElementById('panel-overlay');
+            panel.dataset.currentMediaId = mediaId;
             
             // Set basic info
             document.getElementById('media-filename').textContent = media.file_name;
@@ -148,6 +194,48 @@ async function showMediaDetail(mediaId) {
             document.getElementById('media-type').textContent = media.media_type;
             document.getElementById('media-hash').textContent = media.file_hash;
             document.getElementById('media-created').textContent = formatDate(media.file_created_at);
+            
+            // Check if this is a sub-image and show parent info
+            const parentInfo = document.getElementById('parent-image-info');
+            if (media.parent_id && media.is_sub_image) {
+                try {
+                    const parentRes = await fetch(`/api/media/${media.parent_id}`);
+                    const parentData = await parentRes.json();
+                    
+                    if (parentData.success) {
+                        const parent = parentData.data;
+                        parentInfo.classList.remove('hidden');
+                        document.getElementById('parent-thumbnail').src = `/api/media/${media.parent_id}/image`;
+                        document.getElementById('parent-filename').textContent = parent.file_name;
+                        document.getElementById('parent-image-link').onclick = (e) => {
+                            e.preventDefault();
+                            closePanel();
+                            setTimeout(() => showMediaDetail(media.parent_id), 300);
+                        };
+                    }
+                } catch (error) {
+                    console.error('Error loading parent image:', error);
+                }
+            } else {
+                parentInfo.classList.add('hidden');
+            }
+            
+            // Show/hide conversion controls based on media type
+            const imageConversion = document.getElementById('image-conversion');
+            const videoConversion = document.getElementById('video-conversion');
+            const audioConversion = document.getElementById('audio-conversion');
+            
+            imageConversion.classList.add('hidden');
+            videoConversion.classList.add('hidden');
+            audioConversion.classList.add('hidden');
+            
+            if (media.media_type === 'image') {
+                imageConversion.classList.remove('hidden');
+            } else if (media.media_type === 'video') {
+                videoConversion.classList.remove('hidden');
+            } else if (media.media_type === 'audio') {
+                audioConversion.classList.remove('hidden');
+            }
             
             // Set dimensions
             if (media.width && media.height) {
@@ -250,11 +338,21 @@ async function showMediaDetail(mediaId) {
                 facesSection.classList.add('hidden');
             }
             
-            modal.classList.remove('hidden');
+            // Show the panel
+            panel.classList.add('active');
+            overlay.classList.remove('hidden');
         }
     } catch (error) {
         console.error('Error loading media detail:', error);
     }
+}
+
+// Close panel function
+function closePanel() {
+    const panel = document.getElementById('media-panel');
+    const overlay = document.getElementById('panel-overlay');
+    panel.classList.remove('active');
+    overlay.classList.add('hidden');
 }
 
 // Setup event listeners
@@ -268,7 +366,7 @@ function setupEventListeners() {
     // Filter
     document.getElementById('filter-type').addEventListener('change', (e) => {
         currentFilter = e.target.value;
-        currentPage = 0;
+        currentPage = 1;
         loadGallery();
     });
     
@@ -287,15 +385,17 @@ function setupEventListeners() {
     
     // Pagination
     document.getElementById('prev-page').addEventListener('click', () => {
-        if (currentPage > 0) {
+        if (currentPage > 1) {
             currentPage--;
             loadGallery();
         }
     });
     
     document.getElementById('next-page').addEventListener('click', () => {
-        currentPage++;
-        loadGallery();
+        if (currentPage < totalPages) {
+            currentPage++;
+            loadGallery();
+        }
     });
     
     // Scan button
@@ -308,8 +408,20 @@ function setupEventListeners() {
     // Duplicates button
     document.getElementById('duplicates-btn').addEventListener('click', showDuplicates);
     
+    // Archive selected duplicates
+    document.getElementById('archive-selected-duplicates').addEventListener('click', archiveDuplicates);
+    
+    // Panel close
+    document.getElementById('close-panel').addEventListener('click', closePanel);
+    document.getElementById('panel-overlay').addEventListener('click', closePanel);
+    
+    // Conversion buttons
+    document.getElementById('convert-image-btn').addEventListener('click', () => convertMedia('image'));
+    document.getElementById('convert-video-btn').addEventListener('click', () => convertMedia('video'));
+    document.getElementById('convert-audio-btn').addEventListener('click', () => convertMedia('audio'));
+    
     // Modal close buttons
-    document.querySelectorAll('.close').forEach(btn => {
+    document.querySelectorAll('.modal .close').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.target.closest('.modal').classList.add('hidden');
         });
@@ -397,7 +509,7 @@ async function handleFiles(files) {
 // Perform search
 function performSearch() {
     currentSearch = document.getElementById('search-input').value;
-    currentPage = 0;
+    currentPage = 1;
     loadGallery();
 }
 
@@ -465,15 +577,23 @@ async function showDuplicates() {
                 <p><strong>${formatBytes(totalWasted)}</strong> of wasted space</p>
             `;
             
-            // Display groups
-            groupsDiv.innerHTML = data.data.slice(0, 10).map(group => `
-                <div class="duplicate-group">
+            // Display groups with selection checkboxes
+            groupsDiv.innerHTML = data.data.slice(0, 10).map((group, groupIndex) => `
+                <div class="duplicate-group" data-hash="${group.hash}">
                     <h4>${group.count} copies (${formatBytes(group.total_size)} total)</h4>
+                    <p class="duplicate-hint">Keep the first file, archive the rest:</p>
                     <div class="duplicate-files">
-                        ${group.files.map(file => `
+                        ${group.files.map((file, fileIndex) => `
                             <div class="duplicate-file">
-                                <span class="duplicate-file-path">${file.path}</span>
-                                <span class="duplicate-file-size">${formatBytes(file.size)}</span>
+                                <label>
+                                    <input type="checkbox" class="duplicate-checkbox" 
+                                           data-file-id="${file.id}" 
+                                           data-file-path="${file.path}"
+                                           ${fileIndex > 0 ? 'checked' : ''}>
+                                    <span class="duplicate-file-path">${file.path}</span>
+                                    <span class="duplicate-file-size">${formatBytes(file.size)}</span>
+                                    ${fileIndex === 0 ? '<span class="keep-badge">KEEP</span>' : ''}
+                                </label>
                             </div>
                         `).join('')}
                     </div>
@@ -487,15 +607,162 @@ async function showDuplicates() {
     }
 }
 
+// Convert media to different format
+async function convertMedia(type) {
+    const panel = document.getElementById('media-panel');
+    const mediaId = panel.dataset.currentMediaId;
+    
+    if (!mediaId) return;
+    
+    let format, options = {};
+    
+    if (type === 'image') {
+        format = document.getElementById('image-format').value;
+        if (!format) {
+            alert('Please select a format');
+            return;
+        }
+        options.quality = parseInt(document.getElementById('image-quality').value);
+    } else if (type === 'video') {
+        format = document.getElementById('video-format').value;
+        if (!format) {
+            alert('Please select a format');
+            return;
+        }
+        const resolution = document.getElementById('video-resolution').value;
+        if (resolution) {
+            options.resolution = resolution;
+        }
+    } else if (type === 'audio') {
+        format = document.getElementById('audio-format').value;
+        if (!format) {
+            alert('Please select a format');
+            return;
+        }
+        options.bitrate = parseInt(document.getElementById('audio-bitrate').value);
+    }
+    
+    // Show progress
+    const progressDiv = document.getElementById('conversion-progress');
+    const progressFill = document.getElementById('conversion-progress-fill');
+    const statusText = document.getElementById('conversion-status');
+    
+    progressDiv.classList.remove('hidden');
+    progressFill.style.width = '0%';
+    statusText.textContent = 'Starting conversion...';
+    
+    try {
+        const response = await fetch(`/api/media/${mediaId}/convert`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                format,
+                options
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Conversion failed');
+        }
+        
+        // Get the converted file as a blob
+        const blob = await response.blob();
+        
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `converted.${format}`;
+        if (contentDisposition) {
+            const matches = /filename="(.+)"/.exec(contentDisposition);
+            if (matches) {
+                filename = matches[1];
+            }
+        }
+        
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        progressFill.style.width = '100%';
+        statusText.textContent = 'Conversion complete! Download started.';
+        
+        setTimeout(() => {
+            progressDiv.classList.add('hidden');
+        }, 3000);
+        
+    } catch (error) {
+        console.error('Conversion error:', error);
+        statusText.textContent = 'Conversion failed. Please try again.';
+        statusText.style.color = 'red';
+        
+        setTimeout(() => {
+            progressDiv.classList.add('hidden');
+            statusText.style.color = '';
+        }, 3000);
+    }
+}
+
+// Archive selected duplicates
+async function archiveDuplicates() {
+    const selectedFiles = [];
+    document.querySelectorAll('.duplicate-checkbox:checked').forEach(checkbox => {
+        selectedFiles.push({
+            id: checkbox.dataset.fileId,
+            path: checkbox.dataset.filePath
+        });
+    });
+    
+    if (selectedFiles.length === 0) {
+        alert('No files selected for archiving');
+        return;
+    }
+    
+    if (!confirm(`Archive ${selectedFiles.length} duplicate files?\n\nFiles will be moved to an 'archive' directory and removed from the database.`)) {
+        return;
+    }
+    
+    try {
+        // Create archive directory and move files
+        const response = await fetch('/api/duplicates/archive', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ files: selectedFiles })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(`Successfully archived ${data.data.archived_count} files to ${data.data.archive_path}`);
+            document.getElementById('duplicates-modal').classList.add('hidden');
+            loadStats();
+            loadGallery();
+        } else {
+            alert(`Error archiving files: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error archiving duplicates:', error);
+        alert('Failed to archive duplicates. See console for details.');
+    }
+}
+
 // Update pagination
 function updatePagination(itemCount) {
     const prevBtn = document.getElementById('prev-page');
     const nextBtn = document.getElementById('next-page');
     const pageInfo = document.getElementById('page-info');
     
-    prevBtn.disabled = currentPage === 0;
-    nextBtn.disabled = itemCount < pageSize;
-    pageInfo.textContent = `Page ${currentPage + 1}`;
+    prevBtn.disabled = currentPage === 1;
+    nextBtn.disabled = currentPage >= totalPages || itemCount < pageSize;
+    pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
 }
 
 // Utility functions

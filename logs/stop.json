@@ -313,5 +313,33 @@
     "cwd": "/Users/erewhon/Projects/erewhon/medianator",
     "hook_event_name": "Stop",
     "stop_hook_active": false
+  },
+  {
+    "session_id": "a39c6614-2eb4-4bd4-982e-81871701d349",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/a39c6614-2eb4-4bd4-982e-81871701d349.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "session_id": "9745b360-6e5d-40b7-b086-ea9be4eb61d1",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/9745b360-6e5d-40b7-b086-ea9be4eb61d1.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "session_id": "9745b360-6e5d-40b7-b086-ea9be4eb61d1",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/9745b360-6e5d-40b7-b086-ea9be4eb61d1.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "session_id": "9745b360-6e5d-40b7-b086-ea9be4eb61d1",
+    "transcript_path": "/Users/erewhon/.claude/projects/-Users-erewhon-Projects-erewhon-medianator/9745b360-6e5d-40b7-b086-ea9be4eb61d1.jsonl",
+    "cwd": "/Users/erewhon/Projects/erewhon/medianator",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
   }
 ]

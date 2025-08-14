@@ -172,6 +172,18 @@ impl Database {
 
         Ok(media)
     }
+    
+    pub async fn delete_media_file(&self, id: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            DELETE FROM media_files WHERE id = ?1
+            "#)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        
+        Ok(())
+    }
 
     pub async fn get_media_by_path(&self, path: &str) -> Result<Option<MediaFile>> {
         let media = sqlx::query_as::<_, MediaFile>(

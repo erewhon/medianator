@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::{Multipart, Path, Query, State},
-    http::StatusCode,
+    http::{StatusCode, header},
     response::{Html, IntoResponse, Response},
     Json,
 };
@@ -450,6 +450,231 @@ pub async fn get_duplicates(
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ArchiveDuplicatesRequest {
+    pub files: Vec<FileToArchive>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FileToArchive {
+    pub id: String,
+    pub path: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ArchiveDuplicatesResponse {
+    pub archived_count: usize,
+    pub archive_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConvertMediaRequest {
+    pub format: String,
+    pub options: ConvertOptions,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConvertOptions {
+    pub quality: Option<u8>,
+    pub resolution: Option<String>,
+    pub bitrate: Option<u32>,
+}
+
+pub async fn convert_media(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(request): Json<ConvertMediaRequest>,
+) -> Result<Response, StatusCode> {
+    use std::process::Command;
+    use std::path::PathBuf;
+    
+    // Get media file info
+    let media = match state.db.get_media_by_id(&id).await {
+        Ok(Some(m)) => m,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+    };
+    
+    let input_path = PathBuf::from(&media.file_path);
+    if !input_path.exists() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    
+    // Create temp output file
+    let output_ext = &request.format;
+    let output_filename = format!(
+        "{}_converted.{}",
+        input_path.file_stem().unwrap_or_default().to_string_lossy(),
+        output_ext
+    );
+    let output_path = std::env::temp_dir().join(&output_filename);
+    
+    // Build ffmpeg command based on media type
+    let mut cmd = Command::new("ffmpeg");
+    cmd.arg("-i").arg(&input_path).arg("-y");
+    
+    match media.media_type.as_str() {
+        "image" => {
+            // For images, use ImageMagick convert command instead
+            let mut cmd = Command::new("convert");
+            cmd.arg(&input_path);
+            
+            if let Some(quality) = request.options.quality {
+                cmd.arg("-quality").arg(quality.to_string());
+            }
+            
+            cmd.arg(&output_path);
+            
+            match cmd.output() {
+                Ok(output) if output.status.success() => {},
+                _ => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+            }
+        },
+        "video" => {
+            if request.format == "gif" {
+                // Special handling for animated GIF
+                cmd.arg("-vf").arg("fps=10,scale=320:-1:flags=lanczos");
+            } else {
+                // Video codec selection
+                match request.format.as_str() {
+                    "mp4" => { cmd.arg("-c:v").arg("libx264"); },
+                    "webm" => { cmd.arg("-c:v").arg("libvpx-vp9"); },
+                    "mov" => { cmd.arg("-c:v").arg("libx264").arg("-f").arg("mov"); },
+                    _ => {}
+                };
+                
+                // Resolution if specified
+                if let Some(res) = &request.options.resolution {
+                    cmd.arg("-s").arg(res);
+                }
+            }
+            
+            cmd.arg(&output_path);
+            
+            match cmd.output() {
+                Ok(output) if output.status.success() => {},
+                _ => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+            }
+        },
+        "audio" => {
+            // Audio codec selection
+            match request.format.as_str() {
+                "mp3" => { cmd.arg("-c:a").arg("libmp3lame"); },
+                "ogg" => { cmd.arg("-c:a").arg("libvorbis"); },
+                "m4a" => { cmd.arg("-c:a").arg("aac"); },
+                "flac" => { cmd.arg("-c:a").arg("flac"); },
+                _ => {}
+            };
+            
+            // Bitrate if specified
+            if let Some(bitrate) = request.options.bitrate {
+                cmd.arg("-b:a").arg(format!("{}k", bitrate));
+            }
+            
+            cmd.arg(&output_path);
+            
+            match cmd.output() {
+                Ok(output) if output.status.success() => {},
+                _ => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+            }
+        },
+        _ => return Err(StatusCode::BAD_REQUEST),
+    }
+    
+    // Read the converted file
+    let file_data = match fs::read(&output_path).await {
+        Ok(data) => data,
+        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+    };
+    
+    // Clean up temp file
+    let _ = fs::remove_file(&output_path).await;
+    
+    // Determine content type
+    let content_type = match request.format.as_str() {
+        "jpeg" | "jpg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        "tiff" => "image/tiff",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "avi" => "video/x-msvideo",
+        "mov" => "video/quicktime",
+        "mkv" => "video/x-matroska",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "m4a" => "audio/mp4",
+        "flac" => "audio/flac",
+        _ => "application/octet-stream",
+    };
+    
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", output_filename)
+        )
+        .body(Body::from(file_data))
+        .unwrap())
+}
+
+pub async fn archive_duplicates(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ArchiveDuplicatesRequest>,
+) -> Result<Json<ApiResponse<ArchiveDuplicatesResponse>>, StatusCode> {
+    use std::path::PathBuf;
+    use chrono::Utc;
+    
+    // Create archive directory with timestamp
+    let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
+    let archive_dir = PathBuf::from(format!("./archive/duplicates_{}", timestamp));
+    
+    // Create the archive directory
+    if let Err(e) = fs::create_dir_all(&archive_dir).await {
+        tracing::error!("Failed to create archive directory: {}", e);
+        return Ok(Json(ApiResponse::error(format!("Failed to create archive directory: {}", e))));
+    }
+    
+    let mut archived_count = 0;
+    
+    for file in &request.files {
+        let source_path = PathBuf::from(&file.path);
+        if !source_path.exists() {
+            tracing::warn!("File not found: {}", file.path);
+            continue;
+        }
+        
+        // Create subdirectory structure in archive to preserve hierarchy
+        let file_name = source_path.file_name().unwrap_or_default();
+        let dest_path = archive_dir.join(file_name);
+        
+        // Move the file to archive
+        match fs::rename(&source_path, &dest_path).await {
+            Ok(_) => {
+                // Remove from database
+                if let Err(e) = state.db.delete_media_file(&file.id).await {
+                    tracing::error!("Failed to remove file from database: {}", e);
+                } else {
+                    archived_count += 1;
+                    tracing::info!("Archived file: {} -> {}", file.path, dest_path.display());
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to move file {}: {}", file.path, e);
+            }
+        }
+    }
+    
+    Ok(Json(ApiResponse::success(ArchiveDuplicatesResponse {
+        archived_count,
+        archive_path: archive_dir.to_string_lossy().to_string(),
+    })))
 }
 
 #[derive(Debug, Deserialize)]

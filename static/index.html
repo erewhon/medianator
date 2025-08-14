@@ -83,6 +83,7 @@
                 <button class="view-btn" data-view="list">List View</button>
                 <button id="scan-btn" class="action-btn">🔄 Scan Directory</button>
                 <button id="duplicates-btn" class="action-btn">🔍 Find Duplicates</button>
+                <button id="archive-duplicates-btn" class="action-btn hidden">📦 Archive Duplicates</button>
                 <button id="batch-reprocess-btn" class="action-btn">♾️ Batch Reprocess</button>
                 <button id="view-faces-btn" class="action-btn">👤 View Faces</button>
             </div>
@@ -91,7 +92,7 @@
             </div>
             <div class="pagination">
                 <button id="prev-page" disabled>Previous</button>
-                <span id="page-info">Page 1</span>
+                <span id="page-info">Page 1 of 1</span>
                 <button id="next-page">Next</button>
             </div>
         </section>
@@ -112,17 +113,105 @@
             </div>
         </div>
 
-        <!-- Media Detail Modal -->
-        <div id="media-modal" class="modal hidden">
-            <div class="modal-content media-detail">
-                <span class="close">&times;</span>
+        <!-- Media Detail Slide Panel -->
+        <div id="media-panel" class="slide-panel">
+            <div class="panel-header">
+                <h3 id="media-filename"></h3>
+                <button class="panel-close" id="close-panel">&times;</button>
+            </div>
+            <div class="panel-content">
                 <div class="media-viewer">
                     <img id="media-preview" src="" alt="Media preview">
                     <video id="video-preview" controls hidden></video>
                     <audio id="audio-preview" controls hidden></audio>
                 </div>
+                
                 <div class="media-info">
-                    <h3 id="media-filename"></h3>
+                    <div id="parent-image-info" class="parent-image-info hidden">
+                        <h4>📎 Part of larger image</h4>
+                        <div class="parent-link">
+                            <a href="#" id="parent-image-link" class="parent-image-link">
+                                <img id="parent-thumbnail" src="" alt="Parent image" class="parent-thumbnail">
+                                <span id="parent-filename"></span>
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- Conversion Controls -->
+                    <div class="conversion-controls">
+                        <h4>🔄 Convert & Download</h4>
+                        <div id="image-conversion" class="conversion-section hidden">
+                            <label for="image-format">Convert to:</label>
+                            <select id="image-format">
+                                <option value="">Select format</option>
+                                <option value="jpeg">JPEG</option>
+                                <option value="png">PNG</option>
+                                <option value="webp">WebP</option>
+                                <option value="gif">GIF</option>
+                                <option value="bmp">BMP</option>
+                                <option value="tiff">TIFF</option>
+                            </select>
+                            <div class="conversion-options">
+                                <label for="image-quality">Quality (1-100):</label>
+                                <input type="number" id="image-quality" min="1" max="100" value="85">
+                            </div>
+                            <button id="convert-image-btn" class="convert-btn">Convert Image</button>
+                        </div>
+                        
+                        <div id="video-conversion" class="conversion-section hidden">
+                            <label for="video-format">Convert to:</label>
+                            <select id="video-format">
+                                <option value="">Select format</option>
+                                <option value="mp4">MP4 (H.264)</option>
+                                <option value="webm">WebM</option>
+                                <option value="avi">AVI</option>
+                                <option value="mov">MOV</option>
+                                <option value="mkv">MKV</option>
+                                <option value="gif">GIF (animated)</option>
+                            </select>
+                            <div class="conversion-options">
+                                <label for="video-resolution">Resolution:</label>
+                                <select id="video-resolution">
+                                    <option value="">Keep original</option>
+                                    <option value="1920x1080">1080p (1920x1080)</option>
+                                    <option value="1280x720">720p (1280x720)</option>
+                                    <option value="854x480">480p (854x480)</option>
+                                    <option value="640x360">360p (640x360)</option>
+                                </select>
+                            </div>
+                            <button id="convert-video-btn" class="convert-btn">Convert Video</button>
+                        </div>
+                        
+                        <div id="audio-conversion" class="conversion-section hidden">
+                            <label for="audio-format">Convert to:</label>
+                            <select id="audio-format">
+                                <option value="">Select format</option>
+                                <option value="mp3">MP3</option>
+                                <option value="wav">WAV</option>
+                                <option value="ogg">OGG Vorbis</option>
+                                <option value="m4a">M4A (AAC)</option>
+                                <option value="flac">FLAC</option>
+                            </select>
+                            <div class="conversion-options">
+                                <label for="audio-bitrate">Bitrate:</label>
+                                <select id="audio-bitrate">
+                                    <option value="128">128 kbps</option>
+                                    <option value="192">192 kbps</option>
+                                    <option value="256" selected>256 kbps</option>
+                                    <option value="320">320 kbps</option>
+                                </select>
+                            </div>
+                            <button id="convert-audio-btn" class="convert-btn">Convert Audio</button>
+                        </div>
+                        
+                        <div id="conversion-progress" class="conversion-progress hidden">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="conversion-progress-fill"></div>
+                            </div>
+                            <p id="conversion-status">Converting...</p>
+                        </div>
+                    </div>
+                    
                     <div class="info-grid">
                         <div class="info-item">
                             <span class="info-label">Path:</span>
@@ -149,6 +238,7 @@
                             <span id="media-created"></span>
                         </div>
                     </div>
+                    
                     <div class="camera-info hidden" id="camera-info">
                         <h4>📷 Camera Information</h4>
                         <div class="info-grid">
@@ -170,16 +260,19 @@
                             </div>
                         </div>
                     </div>
+                    
                     <div class="detected-faces hidden" id="detected-faces">
                         <h4>👤 Detected Faces</h4>
                         <div id="faces-list"></div>
                     </div>
+                    
                     <div class="media-actions">
                         <button id="reprocess-single-btn" class="action-btn">🔄 Reprocess This File</button>
                     </div>
                 </div>
             </div>
         </div>
+        <div id="panel-overlay" class="panel-overlay hidden"></div>
 
         <!-- Duplicates Modal -->
         <div id="duplicates-modal" class="modal hidden">
@@ -188,6 +281,9 @@
                 <h2>Duplicate Files</h2>
                 <div id="duplicate-stats"></div>
                 <div id="duplicate-groups"></div>
+                <div class="modal-actions">
+                    <button id="archive-selected-duplicates" class="primary-btn">📦 Archive Selected Duplicates</button>
+                </div>
             </div>
         </div>
     </div>
