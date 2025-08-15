@@ -1573,3 +1573,69 @@ h2 {
     font-size: 14px;
     margin: 0;
 }
+
+/* Detection Actions */
+.detection-actions {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f9f9f9;
+    border-radius: 8px;
+}
+
+.detection-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+
+.detection-results {
+    margin-top: 20px;
+    padding: 15px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+}
+
+.scenes-container,
+.classification-container,
+.objects-container {
+    margin-bottom: 15px;
+}
+
+.scene-item {
+    padding: 10px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    margin-bottom: 10px;
+}
+
+.scene-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+.scene-details {
+    display: flex;
+    gap: 15px;
+    color: #666;
+    font-size: 0.9em;
+}
+
+.scene-keyframe {
+    max-width: 100%;
+    margin-top: 10px;
+    border-radius: 4px;
+}
+
+.category-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    margin: 2px;
+    background: #e3f2fd;
+    color: #1976d2;
+    border-radius: 4px;
+    font-size: 0.9em;
+}

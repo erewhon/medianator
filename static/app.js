@@ -660,6 +660,28 @@ async function showMediaDetail(mediaId) {
             // Initialize transcription for audio/video files
             initTranscription(mediaId, media.media_type);
             
+            // Show detection actions based on media type
+            const detectionActions = document.getElementById('detection-actions');
+            const detectScenesBtn = document.getElementById('detect-scenes-btn');
+            const classifyPhotoBtn = document.getElementById('classify-photo-btn');
+            const detectObjectsBtn = document.getElementById('detect-objects-btn');
+            
+            if (detectionActions) {
+                if (media.media_type === 'video') {
+                    detectionActions.classList.remove('hidden');
+                    if (detectScenesBtn) detectScenesBtn.style.display = 'inline-block';
+                    if (classifyPhotoBtn) classifyPhotoBtn.style.display = 'none';
+                    if (detectObjectsBtn) detectObjectsBtn.style.display = 'inline-block';
+                } else if (media.media_type === 'image') {
+                    detectionActions.classList.remove('hidden');
+                    if (detectScenesBtn) detectScenesBtn.style.display = 'none';
+                    if (classifyPhotoBtn) classifyPhotoBtn.style.display = 'inline-block';
+                    if (detectObjectsBtn) detectObjectsBtn.style.display = 'inline-block';
+                } else {
+                    detectionActions.classList.add('hidden');
+                }
+            }
+            
             // Show the panel
             panel.classList.add('active');
             overlay.classList.remove('hidden');
@@ -787,6 +809,25 @@ function setupEventListeners() {
     
     // Auto Albums button
     addEventListenerIfExists('auto-albums-btn', 'click', handleAutoAlbums);
+    
+    // Detection buttons
+    addEventListenerIfExists('detect-scenes-btn', 'click', () => {
+        const panel = document.getElementById('media-panel');
+        const mediaId = panel?.dataset.currentMediaId;
+        if (mediaId) detectScenes(mediaId);
+    });
+    
+    addEventListenerIfExists('classify-photo-btn', 'click', () => {
+        const panel = document.getElementById('media-panel');
+        const mediaId = panel?.dataset.currentMediaId;
+        if (mediaId) classifyPhoto(mediaId);
+    });
+    
+    addEventListenerIfExists('detect-objects-btn', 'click', () => {
+        const panel = document.getElementById('media-panel');
+        const mediaId = panel?.dataset.currentMediaId;
+        if (mediaId) detectObjects(mediaId);
+    });
     
     // Archive selected duplicates
     addEventListenerIfExists('archive-selected-duplicates', 'click', archiveDuplicates);
@@ -2011,37 +2052,85 @@ async function detectScenes(mediaId) {
 }
 
 function displayScenes(scenes) {
-    const detailContent = document.querySelector('.detail-content');
-    if (!detailContent) return;
+    const detectionResults = document.getElementById('detection-results');
+    if (!detectionResults) return;
     
-    let scenesHtml = '<div class="scenes-container"><h3>🎬 Detected Scenes</h3>';
+    let scenesHtml = '<div class="scenes-container"><h4>🎬 Detected Scenes</h4>';
     
-    scenes.forEach((scene, index) => {
-        scenesHtml += `
-            <div class="scene-item">
-                <div class="scene-header">
-                    <span class="scene-number">Scene ${scene.scene_number}</span>
-                    <span class="scene-duration">${formatTime(scene.start_time)} - ${formatTime(scene.end_time)}</span>
+    if (scenes.length === 0) {
+        scenesHtml += '<p>No scenes detected</p>';
+    } else {
+        scenes.forEach((scene, index) => {
+            scenesHtml += `
+                <div class="scene-item">
+                    <div class="scene-header">
+                        <span class="scene-number">Scene ${scene.scene_number}</span>
+                        <span class="scene-duration">${formatTime(scene.start_time)} - ${formatTime(scene.end_time)}</span>
+                    </div>
+                    <div class="scene-details">
+                        <span>Duration: ${scene.duration.toFixed(1)}s</span>
+                        <span>Frames: ${scene.start_frame} - ${scene.end_frame}</span>
+                        <span>Confidence: ${(scene.confidence * 100).toFixed(0)}%</span>
+                    </div>
+                    ${scene.keyframe_path ? `<img src="${scene.keyframe_path}" class="scene-keyframe" />` : ''}
                 </div>
-                <div class="scene-details">
-                    <span>Duration: ${scene.duration.toFixed(1)}s</span>
-                    <span>Frames: ${scene.start_frame} - ${scene.end_frame}</span>
-                    <span>Confidence: ${(scene.confidence * 100).toFixed(0)}%</span>
-                </div>
-                ${scene.keyframe_path ? `<img src="${scene.keyframe_path}" class="scene-keyframe" />` : ''}
-            </div>
-        `;
-    });
+            `;
+        });
+    }
     
     scenesHtml += '</div>';
     
-    // Add or update scenes section
-    let scenesSection = detailContent.querySelector('.scenes-container');
-    if (scenesSection) {
-        scenesSection.outerHTML = scenesHtml;
-    } else {
-        detailContent.insertAdjacentHTML('beforeend', scenesHtml);
+    detectionResults.innerHTML = scenesHtml;
+    detectionResults.classList.remove('hidden');
+}
+
+function displayPhotoClassification(classification) {
+    const detectionResults = document.getElementById('detection-results');
+    if (!detectionResults) return;
+    
+    let classHtml = '<div class="classification-container"><h4>🏷️ Photo Classification</h4>';
+    
+    classHtml += `
+        <div class="classification-main">
+            <p><strong>Primary Category:</strong> ${classification.primary_category}</p>
+            ${classification.scene_type ? `<p><strong>Scene Type:</strong> ${classification.scene_type}</p>` : ''}
+        </div>
+    `;
+    
+    // Categories
+    if (classification.categories) {
+        const categories = JSON.parse(classification.categories);
+        classHtml += '<div class="classification-categories">';
+        categories.forEach(cat => {
+            classHtml += `<span class="category-badge">${cat.name} (${(cat.confidence * 100).toFixed(0)}%)</span>`;
+        });
+        classHtml += '</div>';
     }
+    
+    // Tags
+    if (classification.tags) {
+        const tags = JSON.parse(classification.tags);
+        classHtml += '<div class="classification-tags">';
+        tags.forEach(tag => {
+            classHtml += `<span class="tag">${tag}</span>`;
+        });
+        classHtml += '</div>';
+    }
+    
+    // Dominant colors
+    if (classification.dominant_colors) {
+        const colors = JSON.parse(classification.dominant_colors);
+        classHtml += '<div class="color-palette">';
+        colors.forEach(color => {
+            classHtml += `<span class="color-swatch" style="background-color: ${color}" title="${color}"></span>`;
+        });
+        classHtml += '</div>';
+    }
+    
+    classHtml += '</div>';
+    
+    detectionResults.innerHTML = classHtml;
+    detectionResults.classList.remove('hidden');
 }
 
 // Photo Classification
@@ -2136,10 +2225,10 @@ async function detectObjects(mediaId) {
 }
 
 function displayDetectedObjects(objects) {
-    const detailContent = document.querySelector('.detail-content');
-    if (!detailContent) return;
+    const detectionResults = document.getElementById('detection-results');
+    if (!detectionResults) return;
     
-    let objectsHtml = '<div class="objects-container"><h3>🔍 Detected Objects</h3>';
+    let objectsHtml = '<div class="objects-container"><h4>🔍 Detected Objects</h4>';
     
     if (objects.length === 0) {
         objectsHtml += '<p>No objects detected</p>';
@@ -2158,13 +2247,8 @@ function displayDetectedObjects(objects) {
     
     objectsHtml += '</div>';
     
-    // Add or update objects section
-    let objectsSection = detailContent.querySelector('.objects-container');
-    if (objectsSection) {
-        objectsSection.outerHTML = objectsHtml;
-    } else {
-        detailContent.insertAdjacentHTML('beforeend', objectsHtml);
-    }
+    detectionResults.innerHTML = objectsHtml;
+    detectionResults.classList.remove('hidden');
 }
 
 // Auto Albums functions
