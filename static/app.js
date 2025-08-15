@@ -672,13 +672,24 @@ async function showMediaDetail(mediaId) {
                     if (detectScenesBtn) detectScenesBtn.style.display = 'inline-block';
                     if (classifyPhotoBtn) classifyPhotoBtn.style.display = 'none';
                     if (detectObjectsBtn) detectObjectsBtn.style.display = 'inline-block';
+                    
+                    // Load existing scenes if available
+                    loadExistingScenes(mediaId);
                 } else if (media.media_type === 'image') {
                     detectionActions.classList.remove('hidden');
                     if (detectScenesBtn) detectScenesBtn.style.display = 'none';
                     if (classifyPhotoBtn) classifyPhotoBtn.style.display = 'inline-block';
                     if (detectObjectsBtn) detectObjectsBtn.style.display = 'inline-block';
+                    
+                    // Load existing classification if available
+                    loadExistingClassification(mediaId);
                 } else {
                     detectionActions.classList.add('hidden');
+                }
+                
+                // Load existing detected objects for both images and videos
+                if (media.media_type === 'image' || media.media_type === 'video') {
+                    loadExistingObjects(mediaId);
                 }
             }
             
@@ -2028,9 +2039,58 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+// Load existing detection results
+async function loadExistingScenes(mediaId) {
+    try {
+        const response = await fetch(`/api/media/${mediaId}/scenes`);
+        const data = await response.json();
+        
+        if (data.success && data.data && data.data.length > 0) {
+            displayScenes(data.data);
+        }
+    } catch (error) {
+        console.error('Error loading existing scenes:', error);
+    }
+}
+
+async function loadExistingClassification(mediaId) {
+    try {
+        const response = await fetch(`/api/media/${mediaId}/classification`);
+        const data = await response.json();
+        
+        if (data.success && data.data) {
+            displayPhotoClassification(data.data);
+        }
+    } catch (error) {
+        console.error('Error loading existing classification:', error);
+    }
+}
+
+async function loadExistingObjects(mediaId) {
+    try {
+        const response = await fetch(`/api/media/${mediaId}/objects`);
+        const data = await response.json();
+        
+        if (data.success && data.data && data.data.length > 0) {
+            displayDetectedObjects(data.data);
+        }
+    } catch (error) {
+        console.error('Error loading existing objects:', error);
+    }
+}
+
 // Scene Detection for Videos
 async function detectScenes(mediaId) {
+    const btn = document.getElementById('detect-scenes-btn');
+    const originalText = btn?.textContent || '🎬 Detect Scenes';
+    
     try {
+        // Disable button and show loading state
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Detecting...';
+        }
+        
         showNotification('Detecting scenes...', 'info');
         
         const response = await fetch(`/api/media/${mediaId}/detect-scenes`, {
@@ -2048,6 +2108,12 @@ async function detectScenes(mediaId) {
     } catch (error) {
         console.error('Scene detection error:', error);
         showNotification('Scene detection failed', 'error');
+    } finally {
+        // Re-enable button
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
     }
 }
 
@@ -2135,7 +2201,16 @@ function displayPhotoClassification(classification) {
 
 // Photo Classification
 async function classifyPhoto(mediaId) {
+    const btn = document.getElementById('classify-photo-btn');
+    const originalText = btn?.textContent || '🏷️ Classify Photo';
+    
     try {
+        // Disable button and show loading state
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Classifying...';
+        }
+        
         showNotification('Classifying photo...', 'info');
         
         const response = await fetch(`/api/media/${mediaId}/classify`, {
@@ -2153,6 +2228,12 @@ async function classifyPhoto(mediaId) {
     } catch (error) {
         console.error('Classification error:', error);
         showNotification('Classification failed', 'error');
+    } finally {
+        // Re-enable button
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
     }
 }
 
@@ -2203,7 +2284,16 @@ function displayClassification(classification) {
 
 // Object Detection
 async function detectObjects(mediaId) {
+    const btn = document.getElementById('detect-objects-btn');
+    const originalText = btn?.textContent || '🔍 Detect Objects';
+    
     try {
+        // Disable button and show loading state
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Detecting...';
+        }
+        
         showNotification('Detecting objects...', 'info');
         
         const response = await fetch(`/api/media/${mediaId}/detect-objects`, {
@@ -2221,6 +2311,12 @@ async function detectObjects(mediaId) {
     } catch (error) {
         console.error('Object detection error:', error);
         showNotification('Object detection failed', 'error');
+    } finally {
+        // Re-enable button
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
     }
 }
 

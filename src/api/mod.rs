@@ -86,6 +86,10 @@ pub fn create_app(db: Database, scanner: MediaScanner) -> Router {
         .route("/api/transcriptions/media/:media_id", get(handlers::get_transcription))
         .route("/api/transcriptions/:id", delete(handlers::delete_transcription))
         .route("/api/transcriptions/search", get(handlers::search_transcriptions))
+        // Detection results endpoints
+        .route("/api/media/:id/scenes", get(handlers::get_media_scenes))
+        .route("/api/media/:id/classification", get(handlers::get_media_classification))
+        .route("/api/media/:id/objects", get(handlers::get_media_objects))
         // Auto Albums endpoints
         .route("/api/auto-albums/generate", post(handlers::generate_albums))
         .route("/api/auto-albums", get(handlers::get_auto_albums))

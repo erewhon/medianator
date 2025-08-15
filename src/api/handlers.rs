@@ -1579,8 +1579,38 @@ pub async fn detect_scenes(
             created_at: chrono::Utc::now(),
         };
         
-        // Save to database (you'll need to implement this method)
-        // state.db.insert_video_scene(&db_scene).await?;
+        // Save to database
+        let query = r#"
+            INSERT INTO video_scenes (
+                id, media_file_id, scene_number, start_time, end_time,
+                start_frame, end_frame, duration, keyframe_path, confidence
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (media_file_id, scene_number) 
+            DO UPDATE SET
+                start_time = excluded.start_time,
+                end_time = excluded.end_time,
+                start_frame = excluded.start_frame,
+                end_frame = excluded.end_frame,
+                duration = excluded.duration,
+                keyframe_path = excluded.keyframe_path,
+                confidence = excluded.confidence
+        "#;
+        
+        if let Err(e) = sqlx::query(query)
+            .bind(&db_scene.id)
+            .bind(&db_scene.media_file_id)
+            .bind(db_scene.scene_number)
+            .bind(db_scene.start_time)
+            .bind(db_scene.end_time)
+            .bind(db_scene.start_frame)
+            .bind(db_scene.end_frame)
+            .bind(db_scene.duration)
+            .bind(&db_scene.keyframe_path)
+            .bind(db_scene.confidence)
+            .execute(&state.db.get_pool())
+            .await {
+            tracing::error!("Failed to save scene {}: {}", db_scene.scene_number, e);
+        }
         
         db_scenes.push(db_scene);
     }
@@ -1637,8 +1667,40 @@ pub async fn classify_photo(
         updated_at: chrono::Utc::now(),
     };
     
-    // Save to database (you'll need to implement this method)
-    // state.db.insert_photo_classification(&db_classification).await?;
+    // Save to database
+    let query = r#"
+        INSERT INTO photo_classifications (
+            id, media_file_id, primary_category, categories, tags,
+            scene_type, is_screenshot, is_document, has_text, dominant_colors
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (media_file_id) 
+        DO UPDATE SET
+            primary_category = excluded.primary_category,
+            categories = excluded.categories,
+            tags = excluded.tags,
+            scene_type = excluded.scene_type,
+            is_screenshot = excluded.is_screenshot,
+            is_document = excluded.is_document,
+            has_text = excluded.has_text,
+            dominant_colors = excluded.dominant_colors,
+            updated_at = CURRENT_TIMESTAMP
+    "#;
+    
+    if let Err(e) = sqlx::query(query)
+        .bind(&db_classification.id)
+        .bind(&db_classification.media_file_id)
+        .bind(&db_classification.primary_category)
+        .bind(&db_classification.categories)
+        .bind(&db_classification.tags)
+        .bind(&db_classification.scene_type)
+        .bind(db_classification.is_screenshot)
+        .bind(db_classification.is_document)
+        .bind(db_classification.has_text)
+        .bind(&db_classification.dominant_colors)
+        .execute(&state.db.get_pool())
+        .await {
+        tracing::error!("Failed to save photo classification: {}", e);
+    }
     
     Ok(Json(ApiResponse::success(db_classification)))
 }
@@ -1687,8 +1749,28 @@ pub async fn detect_objects(
             created_at: chrono::Utc::now(),
         };
         
-        // Save to database (you'll need to implement this method)
-        // state.db.insert_detected_object(&db_object).await?;
+        // Save to database
+        let query = r#"
+            INSERT INTO detected_objects (
+                id, media_file_id, class_name, confidence,
+                bbox_x, bbox_y, bbox_width, bbox_height, attributes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#;
+        
+        if let Err(e) = sqlx::query(query)
+            .bind(&db_object.id)
+            .bind(&db_object.media_file_id)
+            .bind(&db_object.class_name)
+            .bind(db_object.confidence)
+            .bind(db_object.bbox_x)
+            .bind(db_object.bbox_y)
+            .bind(db_object.bbox_width)
+            .bind(db_object.bbox_height)
+            .bind(&db_object.attributes)
+            .execute(&state.db.get_pool())
+            .await {
+            tracing::error!("Failed to save detected object {}: {}", db_object.class_name, e);
+        }
         
         db_objects.push(db_object);
     }
@@ -2451,6 +2533,74 @@ pub async fn get_auto_album_media(
         Ok(media) => Ok(Json(ApiResponse::success(media))),
         Err(e) => {
             error!("Failed to fetch album media: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn get_media_scenes(
+    State(state): State<Arc<AppState>>,
+    Path(media_id): Path<String>,
+) -> Result<Json<ApiResponse<Vec<VideoScene>>>, StatusCode> {
+    let query = r#"
+        SELECT * FROM video_scenes 
+        WHERE media_file_id = ?
+        ORDER BY scene_number
+    "#;
+    
+    match sqlx::query_as::<_, VideoScene>(query)
+        .bind(media_id)
+        .fetch_all(&state.db.get_pool())
+        .await
+    {
+        Ok(scenes) => Ok(Json(ApiResponse::success(scenes))),
+        Err(e) => {
+            error!("Failed to fetch scenes: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn get_media_classification(
+    State(state): State<Arc<AppState>>,
+    Path(media_id): Path<String>,
+) -> Result<Json<ApiResponse<Option<PhotoClassification>>>, StatusCode> {
+    let query = r#"
+        SELECT * FROM photo_classifications 
+        WHERE media_file_id = ?
+    "#;
+    
+    match sqlx::query_as::<_, PhotoClassification>(query)
+        .bind(media_id)
+        .fetch_optional(&state.db.get_pool())
+        .await
+    {
+        Ok(classification) => Ok(Json(ApiResponse::success(classification))),
+        Err(e) => {
+            error!("Failed to fetch classification: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn get_media_objects(
+    State(state): State<Arc<AppState>>,
+    Path(media_id): Path<String>,
+) -> Result<Json<ApiResponse<Vec<DetectedObject>>>, StatusCode> {
+    let query = r#"
+        SELECT * FROM detected_objects 
+        WHERE media_file_id = ?
+        ORDER BY confidence DESC
+    "#;
+    
+    match sqlx::query_as::<_, DetectedObject>(query)
+        .bind(media_id)
+        .fetch_all(&state.db.get_pool())
+        .await
+    {
+        Ok(objects) => Ok(Json(ApiResponse::success(objects))),
+        Err(e) => {
+            error!("Failed to fetch detected objects: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
