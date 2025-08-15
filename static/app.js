@@ -1983,3 +1983,183 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+// Scene Detection for Videos
+async function detectScenes(mediaId) {
+    try {
+        showNotification('Detecting scenes...', 'info');
+        
+        const response = await fetch(`/api/media/${mediaId}/detect-scenes`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            displayScenes(data.data);
+            showNotification(`Detected ${data.data.length} scenes`, 'success');
+        } else {
+            showNotification('Scene detection failed: ' + data.error, 'error');
+        }
+    } catch (error) {
+        console.error('Scene detection error:', error);
+        showNotification('Scene detection failed', 'error');
+    }
+}
+
+function displayScenes(scenes) {
+    const detailContent = document.querySelector('.detail-content');
+    if (!detailContent) return;
+    
+    let scenesHtml = '<div class="scenes-container"><h3>🎬 Detected Scenes</h3>';
+    
+    scenes.forEach((scene, index) => {
+        scenesHtml += `
+            <div class="scene-item">
+                <div class="scene-header">
+                    <span class="scene-number">Scene ${scene.scene_number}</span>
+                    <span class="scene-duration">${formatTime(scene.start_time)} - ${formatTime(scene.end_time)}</span>
+                </div>
+                <div class="scene-details">
+                    <span>Duration: ${scene.duration.toFixed(1)}s</span>
+                    <span>Frames: ${scene.start_frame} - ${scene.end_frame}</span>
+                    <span>Confidence: ${(scene.confidence * 100).toFixed(0)}%</span>
+                </div>
+                ${scene.keyframe_path ? `<img src="${scene.keyframe_path}" class="scene-keyframe" />` : ''}
+            </div>
+        `;
+    });
+    
+    scenesHtml += '</div>';
+    
+    // Add or update scenes section
+    let scenesSection = detailContent.querySelector('.scenes-container');
+    if (scenesSection) {
+        scenesSection.outerHTML = scenesHtml;
+    } else {
+        detailContent.insertAdjacentHTML('beforeend', scenesHtml);
+    }
+}
+
+// Photo Classification
+async function classifyPhoto(mediaId) {
+    try {
+        showNotification('Classifying photo...', 'info');
+        
+        const response = await fetch(`/api/media/${mediaId}/classify`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            displayClassification(data.data);
+            showNotification('Photo classified successfully', 'success');
+        } else {
+            showNotification('Classification failed: ' + data.error, 'error');
+        }
+    } catch (error) {
+        console.error('Classification error:', error);
+        showNotification('Classification failed', 'error');
+    }
+}
+
+function displayClassification(classification) {
+    const detailContent = document.querySelector('.detail-content');
+    if (!detailContent) return;
+    
+    const categories = JSON.parse(classification.categories || '[]');
+    const tags = JSON.parse(classification.tags || '[]');
+    const colors = JSON.parse(classification.dominant_colors || '[]');
+    
+    let classHtml = `
+        <div class="classification-container">
+            <h3>🏷️ Photo Classification</h3>
+            <div class="classification-primary">
+                <strong>Category:</strong> ${classification.primary_category}
+            </div>
+            ${classification.scene_type ? `<div><strong>Scene:</strong> ${classification.scene_type}</div>` : ''}
+            <div class="classification-badges">
+                ${classification.is_screenshot ? '<span class="badge badge-screenshot">Screenshot</span>' : ''}
+                ${classification.is_document ? '<span class="badge badge-document">Document</span>' : ''}
+                ${classification.has_text ? '<span class="badge badge-text">Contains Text</span>' : ''}
+            </div>
+            ${tags.length > 0 ? `
+                <div class="classification-tags">
+                    <strong>Tags:</strong> ${tags.map(tag => `<span class="tag">${tag}</span>`).join(' ')}
+                </div>
+            ` : ''}
+            ${colors.length > 0 ? `
+                <div class="classification-colors">
+                    <strong>Colors:</strong>
+                    <div class="color-palette">
+                        ${colors.map(color => `<span class="color-swatch" style="background-color: ${color}"></span>`).join('')}
+                    </div>
+                </div>
+            ` : ''}
+        </div>
+    `;
+    
+    // Add or update classification section
+    let classSection = detailContent.querySelector('.classification-container');
+    if (classSection) {
+        classSection.outerHTML = classHtml;
+    } else {
+        detailContent.insertAdjacentHTML('beforeend', classHtml);
+    }
+}
+
+// Object Detection
+async function detectObjects(mediaId) {
+    try {
+        showNotification('Detecting objects...', 'info');
+        
+        const response = await fetch(`/api/media/${mediaId}/detect-objects`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            displayDetectedObjects(data.data);
+            showNotification(`Detected ${data.data.length} objects`, 'success');
+        } else {
+            showNotification('Object detection failed: ' + data.error, 'error');
+        }
+    } catch (error) {
+        console.error('Object detection error:', error);
+        showNotification('Object detection failed', 'error');
+    }
+}
+
+function displayDetectedObjects(objects) {
+    const detailContent = document.querySelector('.detail-content');
+    if (!detailContent) return;
+    
+    let objectsHtml = '<div class="objects-container"><h3>🔍 Detected Objects</h3>';
+    
+    if (objects.length === 0) {
+        objectsHtml += '<p>No objects detected</p>';
+    } else {
+        objectsHtml += '<div class="objects-list">';
+        objects.forEach(obj => {
+            objectsHtml += `
+                <div class="object-item">
+                    <span class="object-class">${obj.class_name}</span>
+                    <span class="object-confidence">${(obj.confidence * 100).toFixed(0)}%</span>
+                </div>
+            `;
+        });
+        objectsHtml += '</div>';
+    }
+    
+    objectsHtml += '</div>';
+    
+    // Add or update objects section
+    let objectsSection = detailContent.querySelector('.objects-container');
+    if (objectsSection) {
+        objectsSection.outerHTML = objectsHtml;
+    } else {
+        detailContent.insertAdjacentHTML('beforeend', objectsHtml);
+    }
+}

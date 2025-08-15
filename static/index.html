@@ -286,6 +286,52 @@
                         <div id="faces-list"></div>
                     </div>
                     
+                    <!-- Transcription Section -->
+                    <div class="transcription-section hidden" id="transcription-section">
+                        <h4>🎙️ Transcription</h4>
+                        <div id="transcription-controls" class="transcription-controls">
+                            <div class="transcription-options">
+                                <label for="transcription-language">Language (optional):</label>
+                                <select id="transcription-language">
+                                    <option value="">Auto-detect</option>
+                                    <option value="en">English</option>
+                                    <option value="es">Spanish</option>
+                                    <option value="fr">French</option>
+                                    <option value="de">German</option>
+                                    <option value="it">Italian</option>
+                                    <option value="pt">Portuguese</option>
+                                    <option value="zh">Chinese</option>
+                                    <option value="ja">Japanese</option>
+                                    <option value="ko">Korean</option>
+                                    <option value="ru">Russian</option>
+                                </select>
+                                <label class="checkbox-label" style="margin-left: 20px;">
+                                    <input type="checkbox" id="enable-speaker-diarization">
+                                    <span>Identify Multiple Speakers</span>
+                                </label>
+                            </div>
+                            <button id="transcribe-btn" class="primary-btn">Generate Transcription</button>
+                        </div>
+                        <div id="transcription-progress" class="transcription-progress hidden">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="transcription-progress-fill"></div>
+                            </div>
+                            <p id="transcription-status">Transcribing...</p>
+                        </div>
+                        <div id="transcription-result" class="transcription-result hidden">
+                            <div class="transcription-header">
+                                <span id="transcription-language-detected"></span>
+                                <button id="delete-transcription-btn" class="small-btn danger">Delete</button>
+                            </div>
+                            <div id="transcription-text" class="transcription-text"></div>
+                            <div id="transcription-segments" class="transcription-segments hidden">
+                                <h5>Detailed Segments</h5>
+                                <div id="segments-list"></div>
+                            </div>
+                            <button id="toggle-segments-btn" class="small-btn">Show Detailed Segments</button>
+                        </div>
+                    </div>
+                    
                     <div class="media-actions">
                         <button id="reprocess-single-btn" class="action-btn">🔄 Reprocess This File</button>
                         <button id="add-to-story-btn" class="action-btn">📚 Add to Story</button>

@@ -49,6 +49,18 @@ async fn main() -> Result<()> {
         info!("Sub-image extraction enabled (OpenCV: {})", use_opencv_for_subimages);
     }
     
+    // Enable scene detection if configured
+    if std::env::var("ENABLE_SCENE_DETECTION").unwrap_or_default() == "true" {
+        scanner = scanner.with_scene_detection();
+        info!("Scene detection enabled for videos");
+    }
+    
+    // Enable object detection if configured
+    if std::env::var("ENABLE_OBJECT_DETECTION").unwrap_or_default() == "true" {
+        scanner = scanner.with_object_detection();
+        info!("Object detection and photo classification enabled");
+    }
+    
     // Enable face detection if configured
     if std::env::var("ENABLE_FACE_DETECTION").unwrap_or_default() == "true" {
         // Get the detector type from environment variable

@@ -12,9 +12,10 @@ opencv-face = ["opencv"]
 tokio = { version = "1.40", features = ["full"] }
 
 # Web framework
-axum = { version = "0.7", features = ["macros", "multipart"] }
+axum = { version = "0.7", features = ["macros", "multipart", "ws"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs", "trace", "cors"] }
+futures = "0.3"
 
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono"] }
@@ -70,5 +71,7 @@ base64 = "0.22"
 # Note: OpenCV requires system OpenCV installation (brew install opencv on macOS)
 opencv = { version = "0.95.1", optional = true, default-features = false, features = ["imgcodecs", "imgproc", "objdetect"] }
 
-[dev-dependencies]
+# Temporary file handling for transcription
 tempfile = "3.12"
+
+[dev-dependencies]

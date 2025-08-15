@@ -1384,3 +1384,126 @@ h2 {
     color: #333;
     line-height: 1.5;
 }
+
+/* Detection UI Styles */
+.detect-scenes-button, .classify-button, .detect-objects-button {
+    margin: 5px;
+    padding: 8px 16px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.scenes-container, .classification-container, .objects-container {
+    margin-top: 20px;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+}
+
+.scene-item {
+    margin: 10px 0;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 5px;
+}
+
+.scene-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+.scene-details {
+    display: flex;
+    gap: 15px;
+    font-size: 0.9em;
+    color: #888;
+}
+
+.scene-keyframe {
+    max-width: 200px;
+    margin-top: 10px;
+    border-radius: 4px;
+}
+
+.classification-primary {
+    font-size: 1.1em;
+    margin-bottom: 10px;
+}
+
+.classification-badges {
+    display: flex;
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    background: rgba(100, 100, 255, 0.2);
+}
+
+.badge-screenshot {
+    background: rgba(255, 100, 100, 0.2);
+}
+
+.badge-document {
+    background: rgba(100, 255, 100, 0.2);
+}
+
+.badge-text {
+    background: rgba(255, 255, 100, 0.2);
+}
+
+.classification-tags {
+    margin: 10px 0;
+}
+
+.tag {
+    display: inline-block;
+    padding: 3px 8px;
+    margin: 2px;
+    background: rgba(100, 150, 255, 0.2);
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+.color-palette {
+    display: flex;
+    gap: 5px;
+    margin-top: 5px;
+}
+
+.color-swatch {
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.objects-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.object-item {
+    padding: 5px 10px;
+    background: rgba(100, 100, 255, 0.1);
+    border-radius: 4px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.object-class {
+    font-weight: bold;
+}
+
+.object-confidence {
+    color: #888;
+    font-size: 0.9em;
+}
