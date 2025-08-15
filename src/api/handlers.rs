@@ -14,6 +14,8 @@ use tower_http::services::ServeFile;
 use crate::db::{Database, StoryDatabase};
 use crate::models::{MediaFile, Face, FaceGroup, DuplicateGroup, MediaGroup, MediaGroupWithItems, SmartAlbum, SmartAlbumFilter, Transcription, TranscriptionRequest, TranscriptionResponse, TranscriptionSegment, VideoScene, DetectedObject, PhotoClassification, AutoAlbum};
 use crate::scanner::{MediaScanner, ScanStats, duplicate::DuplicateDetector};
+use crate::api::album_generator::{AlbumGenerator, AlbumCriteria, AlbumGenerationReport};
+use tracing::{info, error};
 
 pub struct AppState {
     pub db: Arc<Database>,
@@ -2370,6 +2372,85 @@ pub async fn search_transcriptions(
         Ok(results) => Ok(Json(ApiResponse::success(results))),
         Err(e) => {
             tracing::error!("Failed to search transcriptions: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn generate_albums(
+    State(state): State<Arc<AppState>>,
+    Json(criteria): Json<Option<AlbumCriteria>>,
+) -> Result<Json<ApiResponse<AlbumGenerationReport>>, StatusCode> {
+    let generator = AlbumGenerator::new(state.db.get_pool().clone());
+    let generator = if let Some(criteria) = criteria {
+        generator.with_criteria(criteria)
+    } else {
+        generator
+    };
+    
+    match generator.analyze_and_create_smart_albums().await {
+        Ok(report) => {
+            info!("Generated {} smart albums", report.total_albums_created);
+            Ok(Json(ApiResponse::success(report)))
+        }
+        Err(e) => {
+            error!("Failed to generate albums: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn get_auto_albums(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ApiResponse<Vec<AutoAlbum>>>, StatusCode> {
+    let query = r#"
+        SELECT 
+            id,
+            album_name,
+            album_type,
+            criteria,
+            media_count,
+            cover_media_id,
+            is_active,
+            created_at,
+            updated_at
+        FROM auto_albums
+        WHERE is_active = 1
+        ORDER BY media_count DESC
+    "#;
+    
+    match sqlx::query_as::<_, AutoAlbum>(query)
+        .fetch_all(&state.db.get_pool())
+        .await
+    {
+        Ok(albums) => Ok(Json(ApiResponse::success(albums))),
+        Err(e) => {
+            error!("Failed to fetch auto albums: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn get_auto_album_media(
+    State(state): State<Arc<AppState>>,
+    Path(album_id): Path<String>,
+) -> Result<Json<ApiResponse<Vec<MediaFile>>>, StatusCode> {
+    let query = r#"
+        SELECT m.*
+        FROM media_files m
+        JOIN auto_album_media aam ON m.id = aam.media_file_id
+        WHERE aam.album_id = ?
+        ORDER BY m.created_at DESC
+    "#;
+    
+    match sqlx::query_as::<_, MediaFile>(query)
+        .bind(album_id)
+        .fetch_all(&state.db.get_pool())
+        .await
+    {
+        Ok(media) => Ok(Json(ApiResponse::success(media))),
+        Err(e) => {
+            error!("Failed to fetch album media: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

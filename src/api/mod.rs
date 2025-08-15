@@ -1,6 +1,7 @@
 pub mod handlers;
 pub mod metrics;
 pub mod websocket;
+pub mod album_generator;
 
 use axum::{
     routing::{get, post, put, delete},
@@ -85,6 +86,10 @@ pub fn create_app(db: Database, scanner: MediaScanner) -> Router {
         .route("/api/transcriptions/media/:media_id", get(handlers::get_transcription))
         .route("/api/transcriptions/:id", delete(handlers::delete_transcription))
         .route("/api/transcriptions/search", get(handlers::search_transcriptions))
+        // Auto Albums endpoints
+        .route("/api/auto-albums/generate", post(handlers::generate_albums))
+        .route("/api/auto-albums", get(handlers::get_auto_albums))
+        .route("/api/auto-albums/:id/media", get(handlers::get_auto_album_media))
         .route("/metrics", get(metrics::metrics_handler))
         .fallback_service(ServeDir::new("static").append_index_html_on_directories(true))
         .layer(MetricsMiddleware::new())

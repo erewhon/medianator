@@ -785,6 +785,9 @@ function setupEventListeners() {
     // Duplicates button
     addEventListenerIfExists('duplicates-btn', 'click', showDuplicates);
     
+    // Auto Albums button
+    addEventListenerIfExists('auto-albums-btn', 'click', handleAutoAlbums);
+    
     // Archive selected duplicates
     addEventListenerIfExists('archive-selected-duplicates', 'click', archiveDuplicates);
     
@@ -2161,5 +2164,125 @@ function displayDetectedObjects(objects) {
         objectsSection.outerHTML = objectsHtml;
     } else {
         detailContent.insertAdjacentHTML('beforeend', objectsHtml);
+    }
+}
+
+// Auto Albums functions
+async function handleAutoAlbums() {
+    try {
+        // First generate albums
+        showNotification('Generating smart albums...', 'info');
+        const generateResponse = await fetch('/api/auto-albums/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                min_media_count: 3,
+                confidence_threshold: 0.7,
+                album_types: ['category', 'scene', 'object']
+            })
+        });
+        
+        const generateData = await generateResponse.json();
+        if (generateData.success) {
+            showNotification(`Generated ${generateData.data.total_albums_created} smart albums`, 'success');
+            
+            // Now display the albums
+            await displayAutoAlbums();
+        } else {
+            showNotification('Failed to generate albums', 'error');
+        }
+    } catch (error) {
+        console.error('Auto album error:', error);
+        showNotification('Failed to process auto albums', 'error');
+    }
+}
+
+async function displayAutoAlbums() {
+    try {
+        const response = await fetch('/api/auto-albums');
+        const data = await response.json();
+        
+        if (data.success) {
+            const gallery = document.getElementById('gallery');
+            gallery.innerHTML = '<h2>📸 Smart Albums</h2>';
+            
+            if (data.data.length === 0) {
+                gallery.innerHTML += '<p>No albums created yet. Process some photos first!</p>';
+                return;
+            }
+            
+            const albumsGrid = document.createElement('div');
+            albumsGrid.className = 'albums-grid';
+            
+            data.data.forEach(album => {
+                const albumCard = document.createElement('div');
+                albumCard.className = 'album-card';
+                albumCard.onclick = () => viewAlbumMedia(album.id, album.album_name);
+                
+                albumCard.innerHTML = `
+                    <div class="album-cover">
+                        ${album.cover_media_id ? 
+                            `<img src="/api/media/${album.cover_media_id}/thumbnail" alt="${album.album_name}">` : 
+                            '<div class="album-placeholder">📸</div>'}
+                    </div>
+                    <div class="album-info">
+                        <h3>${album.album_name}</h3>
+                        <p class="album-type">${album.album_type}</p>
+                        <p class="album-count">${album.media_count} items</p>
+                    </div>
+                `;
+                
+                albumsGrid.appendChild(albumCard);
+            });
+            
+            gallery.appendChild(albumsGrid);
+            
+            // Add back button
+            const backButton = document.createElement('button');
+            backButton.className = 'action-btn';
+            backButton.textContent = '← Back to Gallery';
+            backButton.onclick = () => loadMedia();
+            gallery.insertBefore(backButton, gallery.firstChild);
+        }
+    } catch (error) {
+        console.error('Error loading auto albums:', error);
+        showNotification('Failed to load albums', 'error');
+    }
+}
+
+async function viewAlbumMedia(albumId, albumName) {
+    try {
+        const response = await fetch(`/api/auto-albums/${albumId}/media`);
+        const data = await response.json();
+        
+        if (data.success) {
+            const gallery = document.getElementById('gallery');
+            gallery.innerHTML = `<h2>📸 ${albumName}</h2>`;
+            
+            // Add back button
+            const backButton = document.createElement('button');
+            backButton.className = 'action-btn';
+            backButton.textContent = '← Back to Albums';
+            backButton.onclick = () => displayAutoAlbums();
+            gallery.appendChild(backButton);
+            
+            if (data.data.length === 0) {
+                gallery.innerHTML += '<p>No media in this album</p>';
+                return;
+            }
+            
+            const mediaGrid = document.createElement('div');
+            mediaGrid.className = 'gallery grid-view';
+            
+            data.data.forEach(media => {
+                const mediaItem = createMediaItem(media);
+                mediaGrid.appendChild(mediaItem);
+            });
+            
+            gallery.appendChild(mediaGrid);
+        }
+    } catch (error) {
+        console.error('Error loading album media:', error);
+        showNotification('Failed to load album media', 'error');
     }
 }
