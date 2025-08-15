@@ -222,7 +222,7 @@ if __name__ == "__main__":
     }
 
     /// Detect if image is a document
-    async fn detect_document(&self, image_path: &Path) -> Result<bool> {
+    async fn detect_document(&self, _image_path: &Path) -> Result<bool> {
         // Simple heuristic: check for high contrast and rectangular shapes
         // In production, use proper document detection
         Ok(false)

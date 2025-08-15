@@ -1552,7 +1552,7 @@ pub async fn detect_scenes(
         .with_threshold(0.3)
         .with_min_scene_length(1.0);
     
-    let scenes = match detector.detect_scenes_ffmpeg(Path::new(&media.file_path)).await {
+    let scenes = match detector.detect_scenes_ffmpeg(std::path::Path::new(&media.file_path)).await {
         Ok(scenes) => scenes,
         Err(e) => {
             tracing::error!("Failed to detect scenes: {}", e);
@@ -1611,7 +1611,7 @@ pub async fn classify_photo(
     let detector = ObjectDetector::new()
         .with_confidence_threshold(0.5);
     
-    let classification = match detector.classify_photo(Path::new(&media.file_path)).await {
+    let classification = match detector.classify_photo(std::path::Path::new(&media.file_path)).await {
         Ok(c) => c,
         Err(e) => {
             tracing::error!("Failed to classify photo: {}", e);
@@ -1625,12 +1625,12 @@ pub async fn classify_photo(
         media_file_id: id.clone(),
         primary_category: classification.primary_category,
         categories: serde_json::to_string(&classification.categories).unwrap_or_default(),
-        tags: classification.tags.map(|t| serde_json::to_string(&t).unwrap_or_default()),
+        tags: if classification.tags.is_empty() { None } else { Some(serde_json::to_string(&classification.tags).unwrap_or_default()) },
         scene_type: classification.scene_type,
         is_screenshot: classification.is_screenshot,
         is_document: classification.is_document,
         has_text: classification.has_text,
-        dominant_colors: classification.dominant_colors.map(|c| serde_json::to_string(&c).unwrap_or_default()),
+        dominant_colors: if classification.dominant_colors.is_empty() { None } else { Some(serde_json::to_string(&classification.dominant_colors).unwrap_or_default()) },
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     };
@@ -1661,7 +1661,7 @@ pub async fn detect_objects(
     let detector = ObjectDetector::new()
         .with_confidence_threshold(0.5);
     
-    let objects = match detector.detect_objects_yolo(Path::new(&media.file_path)).await {
+    let objects = match detector.detect_objects_yolo(std::path::Path::new(&media.file_path)).await {
         Ok(objects) => objects,
         Err(e) => {
             tracing::error!("Failed to detect objects: {}", e);
@@ -1681,7 +1681,7 @@ pub async fn detect_objects(
             bbox_y: obj.bbox.y,
             bbox_width: obj.bbox.width,
             bbox_height: obj.bbox.height,
-            attributes: obj.attributes.map(|a| serde_json::to_string(&a).unwrap_or_default()),
+            attributes: if obj.attributes.is_empty() { None } else { Some(serde_json::to_string(&obj.attributes).unwrap_or_default()) },
             created_at: chrono::Utc::now(),
         };
         
