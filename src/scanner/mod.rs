@@ -9,6 +9,8 @@ pub mod opencv_collage_detector;
 pub mod sub_image_extractor;
 pub mod grouping;
 pub mod smart_albums;
+pub mod scene_detection;
+pub mod object_detection;
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
@@ -25,6 +27,8 @@ use viola_jones_detector::ViolaJonesFaceDetector;
 use opencv_face_detector::OpenCVFaceDetector;
 use opencv_rust_detector::OpenCVRustDetector;
 use sub_image_extractor::SubImageExtractor;
+use scene_detection::SceneDetector;
+use object_detection::ObjectDetector;
 
 pub enum FaceDetectorType {
     ViolaJones(ViolaJonesFaceDetector),
@@ -48,6 +52,8 @@ pub struct MediaScanner {
     pub face_detector: Option<FaceDetectorType>,
     pub sub_image_extractor: Option<SubImageExtractor>,
     pub sub_image_output_dir: Option<PathBuf>,
+    pub scene_detector: Option<SceneDetector>,
+    pub object_detector: Option<ObjectDetector>,
 }
 
 impl MediaScanner {
@@ -58,6 +64,8 @@ impl MediaScanner {
             face_detector: None,
             sub_image_extractor: None,
             sub_image_output_dir: None,
+            scene_detector: None,
+            object_detector: None,
         }
     }
 
@@ -111,6 +119,16 @@ impl MediaScanner {
         };
         self.sub_image_extractor = Some(extractor);
         self.sub_image_output_dir = Some(output_dir);
+        self
+    }
+
+    pub fn with_scene_detection(mut self) -> Self {
+        self.scene_detector = Some(SceneDetector::new());
+        self
+    }
+
+    pub fn with_object_detection(mut self) -> Self {
+        self.object_detector = Some(ObjectDetector::new());
         self
     }
 

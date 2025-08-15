@@ -79,6 +79,9 @@ pub fn create_app(db: Database, scanner: MediaScanner) -> Router {
         .route("/api/stories/:story_id/items/:media_id", delete(handlers::remove_story_item))
         // Transcription endpoints
         .route("/api/transcribe", post(handlers::transcribe_media))
+        .route("/api/media/:id/detect-scenes", post(handlers::detect_scenes))
+        .route("/api/media/:id/classify", post(handlers::classify_photo))
+        .route("/api/media/:id/detect-objects", post(handlers::detect_objects))
         .route("/api/transcriptions/media/:media_id", get(handlers::get_transcription))
         .route("/api/transcriptions/:id", delete(handlers::delete_transcription))
         .route("/api/transcriptions/search", get(handlers::search_transcriptions))

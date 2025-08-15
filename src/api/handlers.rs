@@ -12,7 +12,7 @@ use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
 use crate::db::{Database, StoryDatabase};
-use crate::models::{MediaFile, Face, FaceGroup, DuplicateGroup, MediaGroup, MediaGroupWithItems, SmartAlbum, SmartAlbumFilter, Transcription, TranscriptionRequest, TranscriptionResponse, TranscriptionSegment};
+use crate::models::{MediaFile, Face, FaceGroup, DuplicateGroup, MediaGroup, MediaGroupWithItems, SmartAlbum, SmartAlbumFilter, Transcription, TranscriptionRequest, TranscriptionResponse, TranscriptionSegment, VideoScene, DetectedObject, PhotoClassification, AutoAlbum};
 use crate::scanner::{MediaScanner, ScanStats, duplicate::DuplicateDetector};
 
 pub struct AppState {
@@ -1524,6 +1524,174 @@ fn find_command_runner(tool_name: &str, run_method: &str) -> Option<(String, Vec
     }
     
     None
+}
+
+pub async fn detect_scenes(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<Vec<VideoScene>>>, StatusCode> {
+    use crate::scanner::scene_detection::SceneDetector;
+    
+    // Get media file
+    let media = match state.db.get_media_by_id(&id).await {
+        Ok(Some(m)) => m,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Failed to get media {}: {}", id, e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    // Check if it's a video
+    if media.media_type != "video" {
+        return Ok(Json(ApiResponse::error("Media must be a video for scene detection".to_string())));
+    }
+    
+    // Detect scenes
+    let detector = SceneDetector::new()
+        .with_threshold(0.3)
+        .with_min_scene_length(1.0);
+    
+    let scenes = match detector.detect_scenes_ffmpeg(Path::new(&media.file_path)).await {
+        Ok(scenes) => scenes,
+        Err(e) => {
+            tracing::error!("Failed to detect scenes: {}", e);
+            return Ok(Json(ApiResponse::error(format!("Scene detection failed: {}", e))));
+        }
+    };
+    
+    // Convert to database models and save
+    let mut db_scenes = Vec::new();
+    for scene in scenes {
+        let db_scene = VideoScene {
+            id: uuid::Uuid::new_v4().to_string(),
+            media_file_id: id.clone(),
+            scene_number: scene.scene_number as i32,
+            start_time: scene.start_time,
+            end_time: scene.end_time,
+            start_frame: scene.start_frame as i32,
+            end_frame: scene.end_frame as i32,
+            duration: scene.duration,
+            keyframe_path: scene.keyframe_path,
+            confidence: scene.confidence,
+            created_at: chrono::Utc::now(),
+        };
+        
+        // Save to database (you'll need to implement this method)
+        // state.db.insert_video_scene(&db_scene).await?;
+        
+        db_scenes.push(db_scene);
+    }
+    
+    Ok(Json(ApiResponse::success(db_scenes)))
+}
+
+pub async fn classify_photo(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<PhotoClassification>>, StatusCode> {
+    use crate::scanner::object_detection::ObjectDetector;
+    
+    // Get media file
+    let media = match state.db.get_media_by_id(&id).await {
+        Ok(Some(m)) => m,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Failed to get media {}: {}", id, e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    // Check if it's an image
+    if media.media_type != "image" {
+        return Ok(Json(ApiResponse::error("Media must be an image for classification".to_string())));
+    }
+    
+    // Classify photo
+    let detector = ObjectDetector::new()
+        .with_confidence_threshold(0.5);
+    
+    let classification = match detector.classify_photo(Path::new(&media.file_path)).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("Failed to classify photo: {}", e);
+            return Ok(Json(ApiResponse::error(format!("Photo classification failed: {}", e))));
+        }
+    };
+    
+    // Convert to database model
+    let db_classification = PhotoClassification {
+        id: uuid::Uuid::new_v4().to_string(),
+        media_file_id: id.clone(),
+        primary_category: classification.primary_category,
+        categories: serde_json::to_string(&classification.categories).unwrap_or_default(),
+        tags: classification.tags.map(|t| serde_json::to_string(&t).unwrap_or_default()),
+        scene_type: classification.scene_type,
+        is_screenshot: classification.is_screenshot,
+        is_document: classification.is_document,
+        has_text: classification.has_text,
+        dominant_colors: classification.dominant_colors.map(|c| serde_json::to_string(&c).unwrap_or_default()),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+    
+    // Save to database (you'll need to implement this method)
+    // state.db.insert_photo_classification(&db_classification).await?;
+    
+    Ok(Json(ApiResponse::success(db_classification)))
+}
+
+pub async fn detect_objects(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<Vec<DetectedObject>>>, StatusCode> {
+    use crate::scanner::object_detection::ObjectDetector;
+    
+    // Get media file
+    let media = match state.db.get_media_by_id(&id).await {
+        Ok(Some(m)) => m,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Failed to get media {}: {}", id, e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    // Detect objects
+    let detector = ObjectDetector::new()
+        .with_confidence_threshold(0.5);
+    
+    let objects = match detector.detect_objects_yolo(Path::new(&media.file_path)).await {
+        Ok(objects) => objects,
+        Err(e) => {
+            tracing::error!("Failed to detect objects: {}", e);
+            return Ok(Json(ApiResponse::error(format!("Object detection failed: {}", e))));
+        }
+    };
+    
+    // Convert to database models
+    let mut db_objects = Vec::new();
+    for obj in objects {
+        let db_object = DetectedObject {
+            id: uuid::Uuid::new_v4().to_string(),
+            media_file_id: id.clone(),
+            class_name: obj.class_name,
+            confidence: obj.confidence,
+            bbox_x: obj.bbox.x,
+            bbox_y: obj.bbox.y,
+            bbox_width: obj.bbox.width,
+            bbox_height: obj.bbox.height,
+            attributes: obj.attributes.map(|a| serde_json::to_string(&a).unwrap_or_default()),
+            created_at: chrono::Utc::now(),
+        };
+        
+        // Save to database (you'll need to implement this method)
+        // state.db.insert_detected_object(&db_object).await?;
+        
+        db_objects.push(db_object);
+    }
+    
+    Ok(Json(ApiResponse::success(db_objects)))
 }
 
 // Helper function to extract progress percentage from WhisperX output

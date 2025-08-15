@@ -368,3 +368,62 @@ pub struct TranscriptionResponse {
     pub transcription: Transcription,
     pub segments: Vec<TranscriptionSegment>,
 }
+
+// Scene and object detection models
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct VideoScene {
+    pub id: String,
+    pub media_file_id: String,
+    pub scene_number: i32,
+    pub start_time: f64,
+    pub end_time: f64,
+    pub start_frame: i32,
+    pub end_frame: i32,
+    pub duration: f64,
+    pub keyframe_path: Option<String>,
+    pub confidence: f32,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct DetectedObject {
+    pub id: String,
+    pub media_file_id: String,
+    pub class_name: String,
+    pub confidence: f32,
+    pub bbox_x: f32,
+    pub bbox_y: f32,
+    pub bbox_width: f32,
+    pub bbox_height: f32,
+    pub attributes: Option<String>, // JSON string
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct PhotoClassification {
+    pub id: String,
+    pub media_file_id: String,
+    pub primary_category: String,
+    pub categories: String, // JSON string
+    pub tags: Option<String>, // JSON string
+    pub scene_type: Option<String>,
+    pub is_screenshot: bool,
+    pub is_document: bool,
+    pub has_text: bool,
+    pub dominant_colors: Option<String>, // JSON string
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct AutoAlbum {
+    pub id: String,
+    pub album_name: String,
+    pub album_type: String,
+    pub criteria: String, // JSON string
+    pub media_count: i32,
+    pub cover_media_id: Option<String>,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
